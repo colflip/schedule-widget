@@ -24,7 +24,8 @@
     "test:visual:chromium": "BROWSER=chromium backstop test",
     "test:visual:firefox": "BROWSER=firefox backstop test",
     "test:visual:webkit": "BROWSER=webkit backstop test",
-    "approve:visual": "backstop approve"
+    "approve:visual": "backstop approve",
+    "build": "echo \"no build step\""
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
