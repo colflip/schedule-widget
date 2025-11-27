@@ -1,0 +1,1301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员仪表盘 - schedule-widget</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Round">
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+    <style>
+        /* 全局样式 */
+        :root {
+            --primary-color: #3b82f6;
+            --secondary-color: #64748b;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --info-color: #0ea5e9;
+            --light-bg: #f8fafc;
+            --border-color: #e2e8f0;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --card-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+        }
+
+        /* 按钮加载状态样式 */
+        .search-btn {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .search-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .btn-loading {
+            display: none;
+        }
+
+        .search-btn:disabled .btn-loading {
+            display: inline;
+        }
+
+        .search-btn:disabled .btn-text {
+            display: none;
+        }
+
+        /* 反馈消息样式 */
+        .feedback {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+
+        /* 整合到一行的统计控制元素样式 */
+        .statistics-controls .inline-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 12px 16px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+
+        .statistics-controls .date-range input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            min-width: 140px;
+        }
+
+        .inline-tabs {
+            display: flex;
+            border-radius: 0;
+            overflow: visible;
+            border: none;
+            margin: 0 8px;
+        }
+
+        .inline-tabs .tab-btn {
+            padding: 6px 16px;
+            border: none;
+            background-color: #F8F9FA;
+            color: #2C3E50;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+        }
+
+        .inline-tabs .tab-btn:not(:last-child) {
+            margin-right: 8px;
+        }
+
+        .inline-tabs .tab-btn:hover {
+            background-color: #E9ECEF;
+            color: #2ECC71;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .inline-tabs .tab-btn.active {
+            background-color: #2ECC71;
+            color: white;
+            box-shadow: 0 4px 10px rgba(46, 204, 113, 0.22);
+        }
+
+        /* 主按钮样式 - 查询按钮 - 与用户管理按钮样式一致 */
+        .primary-btn {
+            background-color: #2ECC71;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 90px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+            transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+        }
+
+        .primary-btn:hover {
+            background-color: #27AE60;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .primary-btn:active {
+            transform: translateY(1px);
+        }
+
+        /* 信息按钮样式 - 导出按钮 - 与用户管理按钮样式一致 */
+        .info-btn {
+            background-color: #2ECC71;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 90px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+            transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+        }
+
+        .info-btn:hover {
+            background-color: #27AE60;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .info-btn:active {
+            transform: translateY(1px);
+        }
+
+        .info-btn .material-icons-round {
+            font-size: 16px;
+        }
+
+        /* 响应式调整 */
+        @media (max-width: 1200px) {
+            .statistics-controls .inline-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .inline-tabs {
+                margin: 8px 0;
+                justify-content: center;
+            }
+        }
+
+        .feedback.info {
+            background-color: #e1f0fa;
+            border: 1px solid #beddf6;
+            color: #1e40af;
+        }
+
+        .feedback.error {
+            background-color: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #b91c1c;
+        }
+
+        .feedback.success {
+            background-color: #dcfce7;
+            border: 1px solid #bbf7d0;
+            color: #15803d;
+        }
+
+        /* 数据导出功能样式 */
+        .export-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 0;
+            padding: 16px 0;
+            background-color: transparent;
+            border-radius: 0;
+            border: none;
+        }
+
+        .time-range-preset {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .time-range-preset label {
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            font-size: 14px;
+        }
+
+        .time-range-preset select {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: white;
+            font-size: 14px;
+            min-width: 100px;
+            cursor: pointer;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 12px;
+            margin-left: auto;
+        }
+
+        .export-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background-color: #2ECC71;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+            white-space: nowrap;
+            position: relative;
+            min-width: 90px;
+            justify-content: center;
+        }
+
+        .export-btn:hover:not(:disabled) {
+            background-color: #27AE60;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .export-btn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        .export-btn:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+            opacity: 0.8;
+        }
+
+        .export-btn.loading {
+            pointer-events: none;
+        }
+
+        .export-btn .material-icons-round {
+            font-size: 16px;
+        }
+
+        .export-btn[data-type="student"] {
+            background-color: #2ECC71;
+        }
+
+        .export-btn[data-type="student"]:hover:not(:disabled) {
+            background-color: #27AE60;
+        }
+
+        .export-btn .spinner {
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .export-btn .spinner .material-icons-round {
+            font-size: 16px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .export-loading {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            background-color: var(--secondary-color);
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .export-loading .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid transparent;
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 统计控制区优化 */
+        .statistics-controls {
+            background-color: #f8fafc;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* 概览内的卡片，承载周期查询控件（作为总体概览的一部分） */
+        .overview-panel {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .overview-left {
+            flex: 1.2 1 0;
+        }
+
+        .overview-right {
+            flex: 1 1 0;
+            display: flex;
+            gap: 16px;
+            align-items: stretch;
+        }
+
+        .stats-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 18px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            box-shadow: var(--card-shadow);
+            width: 100%;
+        }
+
+        .stats-card .controls-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1 1 auto;
+            flex-wrap: wrap;
+        }
+
+        .preset-btn {
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #1e293b;
+            transition: background .12s ease, transform .08s ease;
+        }
+
+        .preset-btn:hover {
+            transform: translateY(-2px);
+            background: #f3f7fb;
+        }
+
+        .preset-btn.active {
+            background: #2ECC71;
+            color: white;
+            border-color: rgba(0, 0, 0, 0.04);
+        }
+
+        /* 空的右侧区域已移除，保留语义化容器 */
+        .stats-card .controls-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 新增：查询组件行样式 */
+        .query-row {
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        .query-row .stats-card {
+            width: 100%;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        /* 新增：图表行样式 */
+        .charts-row {
+            width: 100%;
+        }
+
+        .charts-row .chart-card.triple {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            padding: 0;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+        }
+
+        .charts-row .chart-card.triple .chart-container {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            min-height: 320px;
+        }
+
+        .charts-row .chart-card.triple .chart-container canvas {
+            max-height: 280px;
+        }
+
+        /* 中等屏幕：2列布局 */
+        @media (max-width: 1200px) {
+            .charts-row .chart-card.triple {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* 窄屏自适应：垂直堆叠 */
+        @media (max-width: 900px) {
+            .overview-panel {
+                flex-direction: column;
+            }
+
+            .overview-right {
+                width: 100%;
+            }
+
+            .chart-card.triple,
+            .charts-row .chart-card.triple {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .stats-card {
+                padding: 12px;
+            }
+
+            .query-row .stats-card .controls-left {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        /* 移动端优化 */
+        @media (max-width: 600px) {
+            .query-row {
+                margin-bottom: 16px;
+            }
+
+            .charts-row .chart-card.triple .chart-container {
+                min-height: 280px;
+            }
+        }
+
+        .statistics-controls .date-range {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .statistics-controls .date-range label {
+            white-space: nowrap;
+        }
+
+        .statistics-controls .date-range input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background-color: white;
+            font-size: 14px;
+        }
+
+        .statistics-controls .search-btn {
+            padding: 6px 12px;
+            background-color: #2ECC71;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: transform .06s ease, box-shadow .2s ease, background-color .2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.10);
+            margin-left: auto;
+            white-space: nowrap;
+            min-width: 90px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .statistics-controls .search-btn:hover {
+            background-color: #27AE60;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .statistics-controls .search-btn:active {
+            transform: translateY(1px);
+        }
+
+        .statistics-controls .search-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .statistics-controls .statistics-tabs {
+            margin-top: 12px;
+            padding-top: 12px;
+        }
+
+        .statistics-tabs .tab-btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .statistics-tabs .tab-btn {
+            padding: 8px 18px;
+            background-color: white;
+            color: #2C3E50;
+            border: 1px solid rgba(0, 0, 0, 0.06);
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease, color .12s ease;
+        }
+
+        .statistics-tabs .tab-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+        }
+
+        .statistics-tabs .tab-btn.active {
+            background-color: #2ECC71;
+            color: white;
+            border-color: rgba(0, 0, 0, 0.06);
+            box-shadow: 0 6px 18px rgba(46, 204, 113, 0.18);
+        }
+
+        /* 导出数据按钮 */
+        .statistics-tabs {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 12px;
+            padding-top: 12px;
+            gap: 16px;
+        }
+
+        .export-data-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background-color: #2ECC71;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .08s ease, box-shadow .12s ease, background-color .12s ease;
+            box-shadow: 0 6px 18px rgba(46, 204, 113, 0.12);
+            white-space: nowrap;
+            margin-left: 0;
+            min-width: 110px;
+            justify-content: center;
+        }
+
+        .export-data-btn:hover {
+            background-color: #27AE60;
+            box-shadow: 0 4px 6px rgba(46, 204, 113, 0.6);
+        }
+
+        .export-data-btn:active {
+            transform: translateY(1px);
+        }
+
+        .export-data-btn .material-icons-round {
+            font-size: 16px;
+        }
+
+        /* 统一背景卡片容器 - 包含查询组件和图表组件 */
+        .stats-unified-card {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--card-shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        /* 查询组件部分（上方） */
+        .query-section {
+            width: 100%;
+            padding: 8px 0 12px 0;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            min-height: auto;
+        }
+
+        .query-section .query-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .query-section .query-controls>* {
+            flex-shrink: 0;
+        }
+
+        /* 图表组件部分（下方） */
+        .charts-section {
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .charts-section .chart-container {
+            background: #f8fafc;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .charts-section .chart-container:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .charts-section .chart-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        /* 响应式设计 - 小屏幕下图表垂直排列 */
+        @media (max-width: 1400px) {
+            .charts-section {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .query-section .query-controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .stats-unified-card {
+                padding: 16px;
+            }
+        }
+
+        /* 教师统计和学生统计的查询组件分隔线样式 - 与总体概览保持一致 */
+        .teacher-summary-card .chart-header,
+        .student-summary-card .chart-header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="dashboard-container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="logo">
+                <span class="logo-icon material-icons-round">schedule</span>
+                <span class="logo-text">schedule-widget</span>
+            </div>
+            <nav class="nav-menu">
+                <a href="#" class="nav-item active" data-section="overview">
+                    <span class="material-icons-round">dashboard</span>
+                    <span class="nav-text">总览</span>
+                </a>
+                <a href="#" class="nav-item" data-section="users">
+                    <span class="material-icons-round">people</span>
+                    <span class="nav-text">用户管理</span>
+                </a>
+                <a href="#" class="nav-item" data-section="schedule">
+                    <span class="material-icons-round">event_note</span>
+                    <span class="nav-text">排课管理</span>
+                </a>
+                <a href="#" class="nav-item" data-section="statistics">
+                    <span class="material-icons-round">insights</span>
+                    <span class="nav-text">数据统计</span>
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="toggle-sidebar">
+                    <span class="material-icons-round">chevron_left</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- 主要内容区 -->
+        <div class="main-content">
+            <header class="dashboard-header">
+                <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="打开菜单">
+                    <span class="material-icons-round">menu</span>
+                </button>
+                <h2>管理员总览</h2>
+                <div class="user-info">
+                    <span class="user-name" id="adminName">管理员</span>
+                    <span class="role-badge" id="adminRole">(管理员)</span>
+                    <button class="logout-btn" id="logout">退出登录</button>
+                </div>
+            </header>
+
+            <!-- 内容部分 -->
+            <div class="content-area">
+                <!-- 总览部分 -->
+                <section id="overview" class="dashboard-section active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <h3>总教师数</h3>
+                            <p id="teacherCount">加载中...</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总学生数</h3>
+                            <p id="studentCount">加载中...</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>本月排课数</h3>
+                            <p id="monthlySchedules">加载中...</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>待确认排课</h3>
+                            <p id="pendingConfirmations">加载中...</p>
+                        </div>
+                        <div class="stat-card">
+                            <h3>总排课数</h3>
+                            <p id="totalSchedules">加载中...</p>
+                        </div>
+                    </div>
+
+                    <!-- Today's Schedules Section -->
+                    <div class="stats-unified-card" style="margin-top: 20px; padding: 24px;">
+                        <div class="form-header"
+                            style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 16px; font-weight: 600; color: #1e293b; margin: 0;">今日排课</h3>
+                            <button id="refreshTodaySchedulesBtn" class="info-btn"
+                                style="padding: 6px 12px; font-size: 13px;">
+                                <span class="material-icons-round" style="font-size: 16px;">refresh</span> 刷新
+                            </button>
+                        </div>
+                        <div id="todayScheduleList" style="display: flex; flex-direction: column; gap: 12px;">
+                            <div class="no-data" style="text-align: center; color: #64748b; padding: 20px;">加载中...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 用户管理部分 -->
+                <section id="users" class="dashboard-section">
+                    <div class="user-tabs">
+                        <div class="tab-btn-group">
+                            <button class="tab-btn active" data-type="admin">管理员</button>
+                            <button class="tab-btn" data-type="teacher">教师</button>
+                            <button class="tab-btn" data-type="student">学生</button>
+                        </div>
+                        <div class="user-actions">
+
+                            <button id="addUserBtn" class="add-btn">添加用户</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="usersTable">
+                            <thead>
+                                <tr></tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- 用户数据将通过 JavaScript 动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 用户表单模态 -->
+                    <div id="modalOverlay" class="modal-overlay" style="display:none"></div>
+                    <div id="userFormContainer" class="form-container" style="display: none;">
+                        <div class="form-header">
+                            <h3 id="userFormTitle">添加用户</h3>
+                            <button class="close-btn" onclick="closeUserFormModal()"></button>
+                        </div>
+                        <form id="userForm" data-mode="add" data-id="">
+                            <!-- 1. 用户类型放在首位 -->
+                            <div class="form-group">
+                                <label for="userType">用户类型</label>
+                                <select id="userType" required>
+                                    <option value="admin">管理员</option>
+                                    <option value="teacher">教师</option>
+                                    <option value="student">学生</option>
+                                </select>
+                            </div>
+                            <!-- 2. 用户名 -->
+                            <div class="form-group">
+                                <label for="userUsername">用户名</label>
+                                <input type="text" id="userUsername" required>
+                            </div>
+                            <!-- 3. 密码 -->
+                            <div class="form-group">
+                                <label for="userPassword">密码</label>
+                                <input type="password" id="userPassword" required>
+                            </div>
+                            <!-- 4. 其他信息 -->
+                            <div class="form-group">
+                                <label for="userName">姓名</label>
+                                <input type="text" id="userName" required>
+                            </div>
+                            <div class="form-group" id="userPermissionLevelGroup" style="display:block;">
+                                <label for="userPermissionLevel">权限级别</label>
+                                <input type="number" id="userPermissionLevel" min="1" max="3"
+                                    placeholder="请输入权限级别(1-3)">
+                            </div>
+                            <div class="form-group" id="userEmailGroup" style="display:block;">
+                                <label for="userEmail">邮箱</label>
+                                <input type="email" id="userEmail" placeholder="管理员邮箱">
+                            </div>
+                            <div class="form-group" id="userContactGroup" style="display:none;">
+                                <label for="userContact">联系方式</label>
+                                <input type="text" id="userContact">
+                            </div>
+                            <div class="form-group" id="userProfessionGroup" style="display:none;">
+                                <label for="userProfession">职业</label>
+                                <input type="text" id="userProfession" placeholder="教师/学生职业">
+                            </div>
+                            <div class="form-group" id="userWorkLocationGroup" style="display:none;">
+                                <label for="userWorkLocation">工作地点</label>
+                                <input type="text" id="userWorkLocation" placeholder="仅教师填写">
+                            </div>
+                            <div class="form-group" id="userHomeAddressGroup" style="display:none;">
+                                <label for="userHomeAddress">家庭地址</label>
+                                <input type="text" id="userHomeAddress">
+                            </div>
+                            <div class="form-group" id="userVisitLocationGroup" style="display:none;">
+                                <label for="userVisitLocation">探访地点</label>
+                                <input type="text" id="userVisitLocation" placeholder="仅学生填写">
+                            </div>
+                            <!-- 新增：账号状态（教师/学生可见） -->
+                            <div class="form-group" id="userStatusGroup" style="display:none;">
+                                <label for="userStatus">账号状态</label>
+                                <select id="userStatus">
+                                    <option value="1">正常</option>
+                                    <option value="0">暂停</option>
+                                    <option value="-1">删除</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" onclick="closeUserFormModal()">取消</button>
+                                <button type="submit" id="userFormSubmit">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- 排课管理部分 -->
+                <section id="schedule" class="dashboard-section">
+                    <!-- 周视图标题：合并为一行显示筛选、周导航与新建按钮 -->
+                    <div class="schedule-controls">
+                        <div class="schedule-filters">
+                            <div class="filter-group">
+                                <label for="statusFilter">状态筛选:</label>
+                                <select id="statusFilter">
+                                    <option value="">全部状态</option>
+                                    <option value="pending">待确认</option>
+                                    <option value="confirmed">已确认</option>
+                                    <option value="completed">已完成</option>
+                                    <option value="cancelled">已取消</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="typeFilter">类型筛选:</label>
+                                <select id="typeFilter">
+                                    <option value="">全部类型</option>
+                                    <option value="visit">入户</option>
+                                    <option value="trial">试教</option>
+                                    <option value="review">评审</option>
+                                    <option value="review_record">评审记录</option>
+                                    <option value="half_visit">半次入户</option>
+                                    <option value="group_activity">集体活动</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label for="teacherFilter">教师筛选:</label>
+                                <select id="teacherFilter">
+                                    <option value="">全部教师</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="week-navigation">
+                            <button id="prevWeek" class="nav-btn">
+                                <span class="material-icons-round">chevron_left</span>
+                            </button>
+                            <span id="weekRange">加载中...</span>
+                            <button id="nextWeek" class="nav-btn">
+                                <span class="material-icons-round">chevron_right</span>
+                            </button>
+                        </div>
+                        <button id="addScheduleBtn" class="add-btn">新建排课</button>
+                    </div>
+                    <div class="weekly-view">
+
+                        <div class="weekly-table-container">
+                            <table class="weekly-schedule-table">
+                                <thead id="weeklyHeader">
+                                    <!-- 通过 JS 渲染：学生 | 08/周一 | 09/周二 | ... -->
+                                </thead>
+                                <tbody id="weeklyBody">
+                                    <!-- 通过 JS 渲染学生行与每天的排课列表 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 排课详情弹窗 -->
+                    <div id="scheduleModal" class="modal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 id="modalTitle">排课详情</h3>
+                                <span class="close">&times;</span>
+                            </div>
+                            <div class="modal-body">
+                                <div class="schedule-info">
+                                    <div class="info-row">
+                                        <label>学生:</label>
+                                        <span id="modalStudent">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>教师:</label>
+                                        <span id="modalTeacher">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>日期:</label>
+                                        <span id="modalDate">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>时间:</label>
+                                        <span id="modalTime">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>入户地点:</label>
+                                        <span id="modalLocation">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>类型:</label>
+                                        <span id="modalType">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>状态:</label>
+                                        <span id="modalStatus">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <label>备注:</label>
+                                        <span id="modalNotes">-</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button id="editScheduleBtn" class="btn btn-primary">编辑</button>
+                                <button id="deleteScheduleBtn" class="btn btn-danger">删除</button>
+                                <button id="closeModalBtn" class="btn btn-secondary">关闭</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 排课表单 -->
+                    <div id="scheduleFormContainer" class="form-container" style="display: none;">
+                        <div class="form-header">
+                            <h3 id="scheduleFormTitle">添加排课</h3>
+                            <button class="close-btn"
+                                onclick="document.getElementById('scheduleFormContainer').style.display='none'"></button>
+                        </div>
+                        <form id="scheduleForm" data-mode="add" data-id="">
+                            <!-- 第一行：学生 与 日期（并排） -->
+                            <div class="form-group">
+                                <label for="scheduleStudent">学生</label>
+                                <select id="scheduleStudent" required>
+                                    <option value="">选择学生</option>
+                                </select>
+                                <div id="scheduleStudentReadonly" class="readonly-field" style="display:none"></div>
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleDate">日期</label>
+                                <input type="date" id="scheduleDate" required>
+                                <div id="scheduleDateReadonly" class="readonly-field" style="display:none"></div>
+                            </div>
+
+                            <!-- 第二行开始：老师、类型、开始时间、结束时间、入户地点、状态 -->
+                            <div class="form-group">
+                                <label for="scheduleTeacher">教师</label>
+                                <select id="scheduleTeacher" required>
+                                    <option value="">选择教师</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleTypeSelect">类型</label>
+                                <select id="scheduleTypeSelect" required></select>
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleStartTime">开始时间</label>
+                                <input type="time" id="scheduleStartTime" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleEndTime">结束时间</label>
+                                <input type="time" id="scheduleEndTime" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleLocation">入户地点</label>
+                                <input type="text" id="scheduleLocation" placeholder="默认使用学生探访地点">
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleStatus">状态</label>
+                                <select id="scheduleStatus">
+                                    <option value="pending">待确认</option>
+                                    <option value="confirmed">已确认</option>
+                                    <option value="completed">已完成</option>
+                                    <option value="cancelled">已取消</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button"
+                                    onclick="document.getElementById('scheduleFormContainer').style.display='none'">取消</button>
+                                <button type="button" id="scheduleFormDelete" style="display:none">删除</button>
+                                <button type="submit" id="scheduleFormSubmit">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- 数据统计部分 -->
+                <section id="statistics" class="dashboard-section">
+                    <div class="statistics-controls">
+                        <!-- 保留原位置的标签页与导出按钮 -->
+                        <div class="statistics-tabs"
+                            style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:12px;">
+                            <div class="tab-btn-group inline-tabs">
+                                <button class="tab-btn active" data-view="overview" title="查看总体概览">总体概览</button>
+                                <button class="tab-btn" data-view="teacher" title="查看教师统计详情">教师统计</button>
+                                <button class="tab-btn" data-view="student" title="查看学生统计详情">学生统计</button>
+                            </div>
+                            <button id="openExportDialogBtn" class="btn secondary-btn export-data-btn"
+                                title="打开数据导出配置对话框">
+                                <span class="material-icons-round">file_download</span>
+                                <span>导出数据</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="statistics-container">
+                        <div id="statsOverview" class="stats-view active">
+                            <!-- 整体背景卡片容器 -->
+                            <div class="stats-unified-card">
+                                <!-- 第一部分：查询组件（上方） -->
+                                <div class="query-section">
+                                    <div class="query-controls"
+                                        style="display: flex; align-items: center; flex-wrap: wrap; gap: 16px; background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                        <div class="date-range-group"
+                                            style="display: flex; align-items: center; gap: 8px;">
+                                            <label for="statsStartDate"
+                                                style="font-weight: 600; color: #374151;">统计周期:</label>
+                                            <input type="date" id="statsStartDate" class="form-input"
+                                                style="width: auto;">
+                                            <span style="color: #6b7280;">至</span>
+                                            <input type="date" id="statsEndDate" class="form-input"
+                                                style="width: auto;">
+                                        </div>
+
+                                        <div class="action-group"
+                                            style="display: flex; align-items: center; gap: 12px;">
+                                            <button class="btn primary-btn search-btn" id="statisticsSearchBtn"
+                                                title="查询该日期范围内的统计数据">
+                                                <span class="material-icons-round"
+                                                    style="font-size: 18px; margin-right: 4px;">search</span>
+                                                <span class="btn-text">查询</span>
+                                                <span class="btn-loading" style="display: none;">加载中...</span>
+                                            </button>
+
+                                            <div class="preset-buttons"
+                                                style="display:flex; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
+                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="quarter">本季度</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 第二部分：三个图表组件（下方） -->
+                                <div class="charts-section">
+                                    <div class="chart-container">
+                                        <canvas id="scheduleTypeChart"></canvas>
+                                    </div>
+                                    <div class="chart-container">
+                                        <canvas id="teacherTypeStackedChart"></canvas>
+                                    </div>
+                                    <div class="chart-container">
+                                        <canvas id="studentParticipationChart"></canvas>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="statsTeacher" class="stats-view">
+                            <div class="stats-unified-card">
+                                <!-- Query Section -->
+                                <div class="query-section">
+                                    <div class="query-controls"
+                                        style="display: flex; align-items: center; flex-wrap: wrap; gap: 16px; background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                        <div class="date-range-group"
+                                            style="display: flex; align-items: center; gap: 8px;">
+                                            <label for="teacherStartDate"
+                                                style="font-weight: 600; color: #374151;">统计周期:</label>
+                                            <input type="date" id="teacherStartDate" class="form-input"
+                                                style="width: auto;">
+                                            <span style="color: #6b7280;">至</span>
+                                            <input type="date" id="teacherEndDate" class="form-input"
+                                                style="width: auto;">
+                                        </div>
+                                        <div class="action-group"
+                                            style="display: flex; align-items: center; gap: 12px;">
+                                            <button class="btn primary-btn search-btn" id="teacherStatsSearchBtn"
+                                                title="查询该日期范围内的统计数据">
+                                                <span class="material-icons-round"
+                                                    style="font-size: 18px; margin-right: 4px;">search</span>
+                                                <span class="btn-text">查询</span>
+                                            </button>
+                                            <div class="filter-group"
+                                                style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
+                                                <label for="statsTeacherSelect"
+                                                    style="font-weight: 600; color: #374151;">教师:</label>
+                                                <select id="statsTeacherSelect" class="form-select"
+                                                    style="width: auto; min-width: 120px;">
+                                                    <option value="">全部教师</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Charts Section -->
+                                <div class="" style="margin-top: 2px;">
+                                    <div class="chart-card teacher-summary-card">
+                                        <h4 id="teacherSummaryChartTitle" class="summary-chart-title"
+                                            style="text-align: center; margin: 0 0 16px 0; padding: 12px 0 0 0; font-size: 16px; font-weight: bold; color: #1e293b; cursor: help; position: relative;">
+                                            按日期汇总
+                                            <div id="teacherSummaryTitleTooltip" class="teacher-title-tooltip"
+                                                style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 16px; border-radius: 8px; font-size: 13px; z-index: 1000; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                                            </div>
+                                        </h4>
+                                        <div class="chart-container summary-chart" style="position: relative;">
+                                            <canvas id="teacherDailyTypeStackChart"></canvas>
+                                        </div>
+                                        <div id="teacherChartsContainer" class="teacher-charts-grid"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="statsStudent" class="stats-view">
+                            <div class="stats-unified-card">
+                                <!-- Query Section -->
+                                <div class="query-section">
+                                    <div class="query-controls"
+                                        style="display: flex; align-items: center; flex-wrap: wrap; gap: 16px; background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                        <div class="date-range-group"
+                                            style="display: flex; align-items: center; gap: 8px;">
+                                            <label for="studentStartDate"
+                                                style="font-weight: 600; color: #374151;">统计周期:</label>
+                                            <input type="date" id="studentStartDate" class="form-input"
+                                                style="width: auto;">
+                                            <span style="color: #6b7280;">至</span>
+                                            <input type="date" id="studentEndDate" class="form-input"
+                                                style="width: auto;">
+                                        </div>
+                                        <div class="action-group"
+                                            style="display: flex; align-items: center; gap: 12px;">
+                                            <button class="btn primary-btn search-btn" id="studentStatsSearchBtn"
+                                                title="查询该日期范围内的统计数据">
+                                                <span class="material-icons-round"
+                                                    style="font-size: 18px; margin-right: 4px;">search</span>
+                                                <span class="btn-text">查询</span>
+                                            </button>
+                                            <div class="filter-group"
+                                                style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
+                                                <label for="statsStudentSelect"
+                                                    style="font-weight: 600; color: #374151;">学生:</label>
+                                                <select id="statsStudentSelect" class="form-select"
+                                                    style="width: auto; min-width: 120px;">
+                                                    <option value="">全部学生</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Charts Section -->
+                                <div class="" style="margin-top: 2px;">
+                                    <div class="chart-card student-summary-card">
+                                        <h4 id="studentSummaryChartTitle" class="summary-chart-title"
+                                            style="text-align: center; margin: 0 0 16px 0; padding: 12px 0 0 0; font-size: 16px; font-weight: bold; color: #1e293b; cursor: help; position: relative;">
+                                            按日期汇总
+                                            <div id="studentSummaryTitleTooltip" class="student-title-tooltip"
+                                                style="display: none; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 8px; background: rgba(0, 0, 0, 0.85); color: white; padding: 12px 16px; border-radius: 8px; font-size: 13px; z-index: 1000; white-space: nowrap; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);">
+                                            </div>
+                                        </h4>
+                                        <div class="chart-container summary-chart" style="position: relative;">
+                                            <canvas id="studentDailyTypeStackChart"></canvas>
+                                        </div>
+                                        <div id="studentChartsContainer" class="student-charts-grid"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 消息容器 -->
+            <div id="messageContainer"></div>
+        </div>
+    </div>
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <script src="/js/api-utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/admin-stats-plugins.js"></script>
+    <script src="/js/date-range-utils.js"></script>
+    <script src="/js/i18n-utils.js"></script>
+    <script src="/js/export-ui-manager.js"></script>
+    <script src="/js/export-dialog.js"></script>
+    <script src="/js/admin.js"></script>
+</body>
+
+</html>

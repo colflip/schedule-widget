@@ -1,0 +1,49 @@
+{
+  "name": "schedule-widget",
+  "version": "1.0.0",
+  "description": "schedule-widget - Teacher-Student Scheduling System",
+  "main": "src/server/app.js",
+  "scripts": {
+    "start": "node src/server/app.js",
+    "dev": "nodemon src/server/app.js",
+    "dev:offline": "OFFLINE_DEV=true PORT=5174 node src/server/app.js",
+    "db:migrate:restructure": "node src/server/scripts/run-migration-restructure.js",
+    "db:migrate:partition-course-arrangement": "node src/server/scripts/run-partition-course-arrangement.js",
+    "db:migrate:add-user-status": "node src/server/scripts/run-add-user-status.js",
+    "db:migrate:drop-conflict-indexes": "node src/server/scripts/run-drop-conflict-indexes.js",
+    "db:migrate:auto-complete-field": "node src/server/scripts/run-migration-restructure.js src/server/db/migrations/20251109_auto_complete.sql",
+    "jobs:auto-complete-schedules": "node src/server/scripts/run-auto-complete-schedules.js",
+    "docs:db": "node src/server/scripts/generate-db-docs.js",
+    "db:optimize-indexes": "node src/server/scripts/run-optimize-indexes.js",
+    "db:weekly-analyze": "node src/server/scripts/run-weekly-analyze.js",
+    "db:cleanup-daily-availability": "node src/server/scripts/run-cleanup-daily-availability.js",
+    "test": "jest",
+    "test:unit": "jest --passWithNoTests",
+    "test:perf": "node src/server/scripts/stress-test-course-arrangement.js",
+    "i18n:validate": "node src/server/scripts/validate-seclude-types-mapping.js",
+    "test:visual:chromium": "BROWSER=chromium backstop test",
+    "test:visual:firefox": "BROWSER=firefox backstop test",
+    "test:visual:webkit": "BROWSER=webkit backstop test",
+    "approve:visual": "backstop approve"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "bcrypt": "^5.1.1",
+    "body-parser": "^1.20.2",
+    "chart.js": "^4.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "joi": "^18.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.11.3",
+    "pg-connection-string": "^2.9.1",
+    "puppeteer": "^24.30.0"
+  },
+  "devDependencies": {
+    "backstopjs": "^6.3.7",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1",
+    "playwright": "^1.48.0"
+  }
+}
