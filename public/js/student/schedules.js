@@ -334,26 +334,12 @@ function buildMobileScheduleDetail(schedule) {
     if (schedule.isMerged) {
         // Merged state: do not show count badge as per user request
         // Leave empty or show something else? User said "delete".
-    } else {
-        // Single item status row is redundant if we show status inline, but keeping it for consistency or maybe remove?
-        // User requirement: "Teacher (Type, Status)..."
-        // If we show status inline, maybe we don't need the big status chip below?
-        // But the mobile card design usually has a status summary.
-        // Let's keep it for single items as a summary, or maybe remove it to reduce clutter if inline is enough.
-        // However, for consistency with "merged" showing a count, single might show status?
-        // Actually, if inline status is shown, the bottom row is duplicate.
-        // But let's check the requirement: "Use previous style for Type and Status".
-        // Previous style was chips.
-        // I'll keep the bottom row for now as it provides a clear "Card Status" visual.
-        const statusChip = createElement('span', `chip status-${status}`, {
-            textContent: displayStatus,
-            style: 'font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 500;'
-        });
-        statusRow.appendChild(statusChip);
     }
 
-    detail.appendChild(statusRow);
-
+    // Single item status row is redundant if we show status inline, but keeping it for consistency or maybe remove?
+    // The statusRow is created but not appended anywhere.
+    // The original code had an `else` block with `return detail;` which was incorrect.
+    // The `return detail;` should be at the end of the function.
     return detail;
 }
 

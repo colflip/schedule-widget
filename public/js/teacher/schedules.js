@@ -229,6 +229,9 @@ function buildMobileScheduleDetail(schedule) {
         style: 'font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 500; display: inline-block; cursor: pointer; transition: opacity 0.2s;'
     });
 
+    // Store initial status in dataset
+    visualChip.dataset.status = status;
+
     // 添加点击效果
     visualChip.onmousedown = () => visualChip.style.opacity = '0.7';
     visualChip.onmouseup = () => visualChip.style.opacity = '1';
@@ -237,19 +240,25 @@ function buildMobileScheduleDetail(schedule) {
     visualChip.ontouchend = () => visualChip.style.opacity = '1';
 
     visualChip.addEventListener('click', () => {
+        // Read current status from dataset (mutable state)
+        const currentStatus = visualChip.dataset.status;
+
         showActionSheet(
             '修改课程状态',
             SCHEDULE_STATUS_OPTIONS.map(opt => ({
                 label: opt.label,
                 value: opt.value,
-                selected: opt.value === status
+                selected: opt.value === currentStatus
             })),
             async (newStatus) => {
-                if (newStatus !== status) {
+                if (newStatus !== currentStatus) {
                     // 乐观更新视觉层
                     const newLabel = getStatusLabel(newStatus);
                     visualChip.textContent = newLabel;
                     visualChip.className = `chip status-${newStatus}`;
+
+                    // Update dataset immediately
+                    visualChip.dataset.status = newStatus;
 
                     // 调用原有逻辑处理状态变更
                     // 注意：handleStatusChange 可能需要 statusSelect 参数，这里传 null，需要确认 handleStatusChange 内部是否处理了 null
