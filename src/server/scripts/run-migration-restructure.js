@@ -48,7 +48,7 @@ function splitSqlStatements(sql) {
 }
 
 async function runMigration() {
-  const migrationPath = path.join(__dirname, '../db/migrations/20251101_restructure.sql');
+  const migrationPath = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '../db/migrations/20251101_restructure.sql');
   try {
     console.log('读取迁移脚本:', migrationPath);
     const sql = fs.readFileSync(migrationPath, 'utf-8');

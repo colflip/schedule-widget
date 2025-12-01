@@ -2185,6 +2185,10 @@ function formatYearMonth(date) {
 }
 
 function formatDayLabel(date) {
+    const mm = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: TIME_ZONE,
+        month: '2-digit'
+    }).format(date);
     const dd = new Intl.DateTimeFormat('zh-CN', {
         timeZone: TIME_ZONE,
         day: '2-digit'
@@ -2193,7 +2197,7 @@ function formatDayLabel(date) {
         timeZone: TIME_ZONE,
         weekday: 'short'
     }).format(date);
-    return `${dd}/${weekday}`;
+    return `${mm}-${dd}/${weekday}`;
 }
 
 function formatYMD(date) {
@@ -2414,129 +2418,162 @@ function renderGroupedMergedSlots(td, items, student, dateKey) {
     slotOrder.forEach(slot => {
         const slotItems = detailed.filter(x => x.slotKey === slot);
         if (!slotItems.length) return;
-        const clusters = clusterByOverlap(slotItems);
+
+        // 按开始时间排序
+        slotItems.sort((a, b) => a.startMin - b.startMin);
+
         const groupDiv = document.createElement('div');
         groupDiv.classList.add('slot-group', `slot-${slot}`);
-        clusters.forEach(group => {
-            // 状态分组：保持合并行摘要文本，但按不同状态拆分为独立行，以应用不同风格
-            const byStatus = new Map();
-            (group.records || []).forEach(rec => {
-                const key = String(rec.status || 'pending').trim();
-                if (!byStatus.has(key)) byStatus.set(key, []);
-                byStatus.get(key).push(rec);
-            });
-            const statusClassOf = (s = '') => {
-                const v = String(s || '').trim();
-                if (v === 'pending') return 'status-pending';
-                if (v === 'confirmed') return 'status-confirmed';
-                if (v === 'completed') return 'status-completed';
-                if (v === 'cancelled') return 'status-cancelled';
-                return '';
-            };
-            for (const [statusKey, recs] of byStatus.entries()) {
-                const sub = {
-                    records: recs,
-                    minStart: Math.min(...recs.map(r => r.startMin).filter(Number.isFinite)),
-                    maxEnd: Math.max(...recs.map(r => r.endMin).filter(Number.isFinite))
-                };
-                const row = document.createElement('div');
-                row.classList.add('slot-row');
-                // 依据时间段为卡片赋予时段样式（背景色由时段决定）
-                row.classList.add(`slot-${slot}`);
-                const sClass = statusClassOf(statusKey);
-                if (sClass) row.classList.add(sClass);
-                // 构建文本摘要
-                row.textContent = buildMergedRowText(sub);
-                // 添加内部状态chip
-                const chip = document.createElement('span');
-                chip.classList.add('chip', sClass);
-                chip.textContent = getStatusText(statusKey);
-                row.appendChild(chip);
-                row.title = row.textContent;
-                row.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    try {
-                        const records = Array.isArray(recs) ? recs : [];
-                        if (records.length === 0) {
-                            openCellEditor({ id: student.id, name: student.name }, dateKey);
-                            return;
-                        }
-                        if (records.length === 1) {
-                            if (records[0] && records[0].id) {
-                                editSchedule(records[0].id);
-                            }
-                            return;
-                        }
-                        // 多条记录：仅展示该状态下的选择器
-                        const picker = document.createElement('div');
-                        picker.classList.add('group-picker');
-                        const typeClassOf = (name = '') => {
-                            const n = String(name || '').trim();
-                            if (n === '入户' || n === 'visit') return 'type-visit';
-                            if (n === '试教' || n === 'trial') return 'type-trial';
-                            if (n === '评审' || n === 'review') return 'type-review';
-                            if (n === '评审记录' || n === 'review_record') return 'type-review-record';
-                            if (n === '半次入户' || n === 'half_visit') return 'type-half-visit';
-                            if (n === '集体活动' || n === 'group_activity') return 'type-group-activity';
-                            return 'type-default';
-                        };
-                        const statusClassOfItem = (s = '') => {
-                            const v = String(s || '').trim();
-                            if (v === 'pending') return 'status-pending';
-                            if (v === 'confirmed') return 'status-confirmed';
-                            if (v === 'completed') return 'status-completed';
-                            if (v === 'cancelled') return 'status-cancelled';
-                            return '';
-                        };
-                        records.forEach(rec => {
-                            const item = document.createElement('div');
-                            item.classList.add('group-picker-item');
-                            // 依据时间段为卡片赋予时段样式（背景色由时段决定）
-                            item.classList.add(`slot-${slot}`);
-                            const teacher = rec.teacher_name || '待分配';
-                            const typeText = rec.schedule_types || rec.schedule_type || '未分类';
-                            const timeText = `${formatTime(rec.start_time)}-${formatTime(rec.end_time)}`;
-                            const locText = (rec.location || '').trim();
-                            // 组装内部内容
-                            const teacherSpan = document.createElement('span');
-                            teacherSpan.textContent = teacher;
-                            const typeChip = document.createElement('span');
-                            typeChip.classList.add('chip');
-                            const tClass = typeClassOf(typeText);
-                            if (tClass) typeChip.classList.add(tClass.replace('type-', 'type-'));
-                            typeChip.textContent = typeText;
-                            const statusChip = document.createElement('span');
-                            const sClassItem = statusClassOfItem(rec.status);
-                            statusChip.classList.add('chip');
-                            if (sClassItem) statusChip.classList.add(sClassItem);
-                            statusChip.textContent = getStatusText(rec.status || 'pending');
-                            const timeSpan = document.createElement('span');
-                            timeSpan.textContent = ` ${timeText}`;
-                            const locSpan = document.createElement('span');
-                            locSpan.textContent = locText ? ` ${locText}` : '';
-                            item.appendChild(teacherSpan);
-                            item.appendChild(typeChip);
-                            item.appendChild(statusChip);
-                            item.appendChild(timeSpan);
-                            if (locText) item.appendChild(locSpan);
-                            item.addEventListener('click', (ev) => {
-                                ev.stopPropagation();
-                                try { if (rec && rec.id) { editSchedule(rec.id); } } catch (_) { }
-                                try { picker.remove(); } catch (_) { }
-                            });
-                            picker.appendChild(item);
-                        });
-                        const closeBtn = document.createElement('div');
-                        closeBtn.classList.add('group-picker-close');
-                        closeBtn.textContent = '关闭';
-                        closeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); try { picker.remove(); } catch (_) { } });
-                        picker.appendChild(closeBtn);
-                        groupDiv.appendChild(picker);
-                    } catch (_) { }
+
+        // 辅助函数：获取类型样式类
+        const typeClassOf = (name = '') => {
+            const n = String(name || '').trim();
+            if (n === '入户' || n === 'visit') return 'type-visit';
+            if (n === '试教' || n === 'trial') return 'type-trial';
+            if (n === '评审' || n === 'review') return 'type-review';
+            if (n === '评审记录' || n === 'review_record') return 'type-review-record';
+            if (n === '半次入户' || n === 'half_visit') return 'type-half-visit';
+            if (n === '集体活动' || n === 'group_activity') return 'type-group-activity';
+            return 'type-default';
+        };
+
+        // 辅助函数：获取状态样式类
+        const statusClassOf = (s = '') => {
+            const v = String(s || '').trim();
+            if (v === 'pending') return 'status-pending';
+            if (v === 'confirmed') return 'status-confirmed';
+            if (v === 'completed') return 'status-completed';
+            if (v === 'cancelled') return 'status-cancelled';
+            return '';
+        };
+
+        // 分组逻辑：按时间段合并 (startMin-endMin)
+        const mergedGroups = new Map();
+        slotItems.forEach(rec => {
+            const key = `${rec.startMin}-${rec.endMin}`;
+            if (!mergedGroups.has(key)) {
+                mergedGroups.set(key, {
+                    key,
+                    startMin: rec.startMin,
+                    endMin: rec.endMin,
+                    startTime: rec.start_time,
+                    endTime: rec.end_time,
+                    location: rec.location, // 假设同一时间段地点通常相同，如有不同后续处理
+                    records: []
                 });
-                groupDiv.appendChild(row);
+            }
+            const group = mergedGroups.get(key);
+            group.records.push(rec);
+            // 如果地点不同，合并显示
+            if (rec.location && group.location && !group.location.includes(rec.location)) {
+                group.location += `, ${rec.location}`;
+            } else if (rec.location && !group.location) {
+                group.location = rec.location;
             }
         });
+
+        mergedGroups.forEach(group => {
+            const row = document.createElement('div');
+            row.classList.add('slot-row');
+            row.classList.add(`slot-${slot}`);
+
+            // 容器用于放置文本内容
+            const contentContainer = document.createElement('div');
+            contentContainer.style.lineHeight = '1.8';
+            contentContainer.style.fontSize = '13px';
+
+            group.records.forEach((rec, index) => {
+                // 教师名
+                const teacherSpan = document.createElement('span');
+                teacherSpan.textContent = rec.teacher_name || '待分配';
+                teacherSpan.style.fontWeight = '600';
+                contentContainer.appendChild(teacherSpan);
+
+                contentContainer.appendChild(document.createTextNode(' ('));
+
+                // 类型 Chip
+                const typeText = rec.schedule_types || rec.schedule_type || '未分类';
+                const typeChip = document.createElement('span');
+                typeChip.classList.add('chip');
+                const tClass = typeClassOf(typeText);
+                if (tClass) typeChip.classList.add(tClass);
+                typeChip.textContent = typeText;
+                // 调整chip样式以适应行内显示
+                typeChip.style.display = 'inline-flex';
+                typeChip.style.padding = '1px 6px';
+                typeChip.style.margin = '0 2px';
+                typeChip.style.verticalAlign = 'middle';
+                contentContainer.appendChild(typeChip);
+
+                contentContainer.appendChild(document.createTextNode(', '));
+
+                // 状态 Chip (可交互)
+                const statusText = getStatusText(rec.status || 'pending');
+                const sClass = statusClassOf(rec.status);
+                const statusChip = document.createElement('span');
+                statusChip.classList.add('chip');
+                if (sClass) statusChip.classList.add(sClass);
+                statusChip.textContent = statusText;
+                statusChip.style.cursor = 'pointer';
+                statusChip.title = '点击修改状态';
+                statusChip.style.display = 'inline-flex';
+                statusChip.style.padding = '1px 6px';
+                statusChip.style.margin = '0 2px';
+                statusChip.style.verticalAlign = 'middle';
+
+                // 状态点击事件
+                statusChip.addEventListener('click', (e) => {
+                    e.stopPropagation(); // 阻止冒泡
+                    showStatusActionSheet(rec, e.target);
+                });
+
+                contentContainer.appendChild(statusChip);
+
+                contentContainer.appendChild(document.createTextNode(')'));
+
+                // 如果不是最后一个，加逗号分隔
+                if (index < group.records.length - 1) {
+                    contentContainer.appendChild(document.createTextNode(', '));
+                }
+            });
+
+            contentContainer.appendChild(document.createTextNode(', '));
+
+            // 时间
+            const timeText = `${formatTime(group.startTime)}-${formatTime(group.endTime)}`;
+            const timeSpan = document.createElement('span');
+            timeSpan.textContent = timeText;
+            timeSpan.style.fontFamily = 'monospace';
+            contentContainer.appendChild(timeSpan);
+
+            // 地点
+            const locText = (group.location || '').trim();
+            if (locText) {
+                contentContainer.appendChild(document.createTextNode(', '));
+                const locSpan = document.createElement('span');
+                locSpan.textContent = locText;
+                contentContainer.appendChild(locSpan);
+            }
+
+            row.appendChild(contentContainer);
+
+            // 点击行编辑 (默认打开第一个记录，或者如果是合并的，可能需要打开列表？)
+            // 需求未明确说明点击整行的行为，保持原样：如果有多个，可能需要选择？
+            // 但现在的UI已经把所有信息展示出来了。
+            // 简单的做法：点击打开第一个记录的编辑。如果有包含多条，展示选择器。
+            row.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (group.records.length === 1) {
+                    if (group.records[0].id) editSchedule(group.records[0].id);
+                } else {
+                    // 多条记录，展示选择列表供编辑
+                    showGroupPicker(group.records, row);
+                }
+            });
+
+            groupDiv.appendChild(row);
+        });
+
         td.appendChild(groupDiv);
     });
 
@@ -2544,39 +2581,205 @@ function renderGroupedMergedSlots(td, items, student, dateKey) {
     if (unknownItems.length) {
         const groupDiv = document.createElement('div');
         groupDiv.classList.add('slot-group', 'slot-unspecified');
-        const row = document.createElement('div');
-        row.classList.add('slot-row');
-        row.textContent = `${unknownItems.length} 条记录（时间待定）`;
-        row.title = row.textContent;
-        row.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // 展示选择器
-            const picker = document.createElement('div');
-            picker.classList.add('group-picker');
-            unknownItems.forEach(rec => {
-                const item = document.createElement('div');
-                item.classList.add('group-picker-item');
-                const teacher = rec.teacher_name || '待分配';
-                const typeText = rec.schedule_types || rec.schedule_type || '未分类';
-                const locText = (rec.location || '').trim();
-                item.textContent = `${teacher}（${typeText}）${locText ? ' ' + locText : ''}`;
-                item.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    try { if (rec && rec.id) { editSchedule(rec.id); } } catch (_) { }
-                    try { picker.remove(); } catch (_) { }
-                });
-                picker.appendChild(item);
+
+        unknownItems.forEach(rec => {
+            const row = document.createElement('div');
+            row.classList.add('slot-row');
+
+            const teacher = rec.teacher_name || '待分配';
+            const typeText = rec.schedule_types || rec.schedule_type || '未分类';
+            const locText = (rec.location || '').trim();
+
+            row.textContent = `${teacher} (${typeText}), 待定, ${locText}`;
+
+            row.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (rec && rec.id) {
+                    editSchedule(rec.id);
+                }
             });
-            const closeBtn = document.createElement('div');
-            closeBtn.classList.add('group-picker-close');
-            closeBtn.textContent = '关闭';
-            closeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); try { picker.remove(); } catch (_) { } });
-            picker.appendChild(closeBtn);
-            groupDiv.appendChild(picker);
+            groupDiv.appendChild(row);
         });
-        groupDiv.appendChild(row);
+
         td.appendChild(groupDiv);
     }
+}
+
+// 展示分组选择器（用于编辑）
+function showGroupPicker(records, targetEl) {
+    // 移除已存在的选择器
+    const existing = document.querySelector('.group-picker-overlay');
+    if (existing) existing.remove();
+
+    const picker = document.createElement('div');
+    picker.className = 'group-picker-overlay';
+    picker.style.position = 'absolute';
+    picker.style.zIndex = '1000';
+    picker.style.background = 'white';
+    picker.style.border = '1px solid #e2e8f0';
+    picker.style.borderRadius = '8px';
+    picker.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+    picker.style.padding = '8px';
+    picker.style.minWidth = '200px';
+
+    // 定位
+    const rect = targetEl.getBoundingClientRect();
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+    picker.style.top = `${rect.bottom + scrollTop + 4}px`;
+    picker.style.left = `${rect.left + scrollLeft}px`;
+
+    // 标题
+    const title = document.createElement('div');
+    title.textContent = '选择要编辑的课程';
+    title.style.fontSize = '12px';
+    title.style.color = '#64748b';
+    title.style.marginBottom = '8px';
+    title.style.paddingBottom = '4px';
+    title.style.borderBottom = '1px solid #f1f5f9';
+    picker.appendChild(title);
+
+    records.forEach(rec => {
+        const item = document.createElement('div');
+        const teacher = rec.teacher_name || '待分配';
+        const typeText = rec.schedule_types || rec.schedule_type || '未分类';
+        const statusText = getStatusText(rec.status || 'pending');
+
+        item.textContent = `${teacher} (${typeText}) - ${statusText}`;
+        item.style.padding = '8px 12px';
+        item.style.cursor = 'pointer';
+        item.style.borderRadius = '4px';
+        item.style.fontSize = '13px';
+        item.style.marginBottom = '2px';
+        item.style.transition = 'background-color 0.2s';
+
+        item.addEventListener('mouseenter', () => {
+            item.style.background = '#f8fafc';
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.background = 'transparent';
+        });
+
+        item.addEventListener('click', (e) => {
+            e.stopPropagation();
+            picker.remove();
+            if (rec.id) editSchedule(rec.id);
+        });
+
+        picker.appendChild(item);
+    });
+
+    // 点击外部关闭
+    const closeHandler = (e) => {
+        if (!picker.contains(e.target) && e.target !== targetEl) {
+            picker.remove();
+            document.removeEventListener('click', closeHandler);
+        }
+    };
+
+    setTimeout(() => {
+        document.addEventListener('click', closeHandler);
+    }, 0);
+
+    document.body.appendChild(picker);
+}
+
+// 显示状态操作菜单
+function showStatusActionSheet(schedule, targetEl) {
+    // 移除已存在的菜单
+    const existing = document.querySelector('.status-action-sheet');
+    if (existing) existing.remove();
+
+    const statuses = [
+        { value: 'pending', label: '待确认', class: 'status-pending' },
+        { value: 'confirmed', label: '已确认', class: 'status-confirmed' },
+        { value: 'completed', label: '已完成', class: 'status-completed' },
+        { value: 'cancelled', label: '已取消', class: 'status-cancelled' }
+    ];
+
+    const menu = document.createElement('div');
+    menu.className = 'status-action-sheet';
+    menu.style.position = 'absolute';
+    menu.style.zIndex = '1000';
+    menu.style.background = 'white';
+    menu.style.border = '1px solid #e2e8f0';
+    menu.style.borderRadius = '8px';
+    menu.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+    menu.style.padding = '4px';
+    menu.style.minWidth = '120px';
+
+    // 定位
+    const rect = targetEl.getBoundingClientRect();
+    const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+    const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+    menu.style.top = `${rect.bottom + scrollTop + 4}px`;
+    menu.style.left = `${rect.left + scrollLeft}px`;
+
+    statuses.forEach(s => {
+        const item = document.createElement('div');
+        item.textContent = s.label;
+        item.className = `status-option ${s.class}`;
+        item.style.padding = '8px 12px';
+        item.style.cursor = 'pointer';
+        item.style.borderRadius = '4px';
+        item.style.fontSize = '13px';
+        item.style.marginBottom = '2px';
+
+        if (s.value === schedule.status) {
+            item.style.fontWeight = 'bold';
+            item.style.background = '#f1f5f9';
+        }
+
+        item.addEventListener('mouseenter', () => {
+            if (s.value !== schedule.status) item.style.background = '#f8fafc';
+        });
+        item.addEventListener('mouseleave', () => {
+            if (s.value !== schedule.status) item.style.background = 'transparent';
+        });
+
+        item.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.remove();
+            if (s.value === schedule.status) return;
+
+            try {
+                // 调用更新接口
+                const resp = await window.apiUtils.put(`/admin/schedules/${schedule.id}`, {
+                    status: s.value
+                });
+
+                if (resp) {
+                    window.apiUtils.showToast('状态更新成功', 'success');
+                    // 刷新当前视图
+                    if (typeof loadSchedules === 'function') {
+                        loadSchedules();
+                    }
+                }
+            } catch (err) {
+                console.error('更新状态失败:', err);
+                window.apiUtils.showToast('更新状态失败: ' + (err.message || '未知错误'), 'error');
+            }
+        });
+
+        menu.appendChild(item);
+    });
+
+    // 点击外部关闭
+    const closeHandler = (e) => {
+        if (!menu.contains(e.target) && e.target !== targetEl) {
+            menu.remove();
+            document.removeEventListener('click', closeHandler);
+        }
+    };
+
+    // 延迟绑定以避免立即触发
+    setTimeout(() => {
+        document.addEventListener('click', closeHandler);
+    }, 0);
+
+    document.body.appendChild(menu);
 }
 
 // 注入并管理周视图的刷新与分页控件
@@ -3647,7 +3850,17 @@ function showAddUserModal() {
     passwordInput.required = true;
     typeSelect.value = 'admin';
     if (statusSelect) statusSelect.value = '1';
+    if (statusSelect) statusSelect.value = '1';
     toggleContactFields(typeSelect.value);
+
+    // Reset button state
+    const submitBtn = document.getElementById('userFormSubmit');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '保存';
+    }
+    form.dataset.submitting = 'false';
+
     openUserFormModal(formContainer, overlay);
 }
 
@@ -3732,8 +3945,18 @@ function openUserFormModal(container, overlay) {
 function closeUserFormModal() {
     const container = document.getElementById('userFormContainer');
     const overlay = document.getElementById('modalOverlay');
+    const form = document.getElementById('userForm');
+
     if (container) container.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
+
+    // Reset button state on close as well
+    const submitBtn = document.getElementById('userFormSubmit');
+    if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '保存';
+    }
+    if (form) form.dataset.submitting = 'false';
 }
 
 function toggleContactFields(userType) {

@@ -88,6 +88,11 @@ export async function loadSchedules(baseDate) {
 function renderSchedules(weekDates, schedules) {
     const grouped = groupSchedulesByDate(weekDates, schedules);
 
+    // Apply merging logic
+    grouped.forEach((list, date) => {
+        grouped.set(date, mergeSchedules(list));
+    });
+
     // 检测是否为移动端
     if (isMobileView()) {
         renderMobileScheduleTable(weekDates, grouped);
@@ -95,6 +100,56 @@ function renderSchedules(weekDates, schedules) {
         renderHeader(weekDates);
         renderBody(weekDates, grouped);
     }
+}
+
+function mergeSchedules(schedules) {
+    if (!schedules || schedules.length === 0) return [];
+
+    const mergedMap = new Map();
+
+    schedules.forEach(schedule => {
+        // Key: date + start_time + end_time (Ignore type for merging key)
+        const key = `${schedule.start_time}-${schedule.end_time}`;
+
+        if (!mergedMap.has(key)) {
+            mergedMap.set(key, {
+                ...schedule,
+                isMerged: false,
+                mergedCount: 1,
+                mergedIds: [schedule.id],
+                originalSchedules: [schedule],
+                teachers: [{
+                    name: schedule.teacher_name || '未分配教师',
+                    type: schedule.schedule_type_cn || schedule.schedule_type || '课程',
+                    status: schedule.status
+                }]
+            });
+        } else {
+            const existing = mergedMap.get(key);
+            existing.isMerged = true;
+            existing.mergedCount++;
+            existing.mergedIds.push(schedule.id);
+            existing.originalSchedules.push(schedule);
+
+            // Add teacher detail
+            existing.teachers.push({
+                name: schedule.teacher_name || '未分配教师',
+                type: schedule.schedule_type_cn || schedule.schedule_type || '课程',
+                status: schedule.status
+            });
+
+            // Merge locations if different
+            if (schedule.location && existing.location !== schedule.location) {
+                if (!existing.location) {
+                    existing.location = schedule.location;
+                } else if (!existing.location.includes(schedule.location)) {
+                    existing.location += `, ${schedule.location}`;
+                }
+            }
+        }
+    });
+
+    return Array.from(mergedMap.values());
 }
 
 function groupSchedulesByDate(weekDates, schedules) {
@@ -212,44 +267,62 @@ function buildMobileScheduleDetail(schedule) {
     // 移除内联样式，使用 group-picker-item 的 CSS
     detail.style.cssText = 'display: flex; flex-direction: column; gap: 8px; align-items: stretch;';
 
-    // 信息容器（第一行：教师，类型，时间，地点）
+    // 信息容器
     const infoContainer = createElement('div', '', {
-        style: 'font-size: 13px; line-height: 1.6;'
+        style: 'font-size: 13px; line-height: 1.6; word-break: break-all;'
     });
 
-    // 构建信息文本：教师，类型，时间，地点
-    const teacherText = schedule.teacher_name || '未分配教师';
+    // 构建显示文本
+    // 格式：张老师（入户，已确认），周老师（入户，已确认），19:00-21:00，新课堂5楼
+    const teachers = schedule.teachers || [{
+        name: schedule.teacher_name || '未分配教师',
+        type: schedule.schedule_type_cn || schedule.schedule_type || '课程',
+        status: schedule.status
+    }];
+
+    teachers.forEach((t, index) => {
+        // Teacher Name
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = t.name;
+        infoContainer.appendChild(nameSpan);
+
+        infoContainer.appendChild(document.createTextNode(' ('));
+
+        // Type Chip
+        let typeClass = 'type-default';
+        if (t.type.includes('入户')) typeClass = 'type-visit';
+        else if (t.type.includes('试教')) typeClass = 'type-trial';
+        else if (t.type.includes('评审')) typeClass = 'type-review';
+        else if (t.type.includes('半次')) typeClass = 'type-half-visit';
+        else if (t.type.includes('集体')) typeClass = 'type-group-activity';
+
+        const typeChip = createElement('span', `chip ${typeClass}`, {
+            textContent: t.type,
+            style: 'font-size: 11px; padding: 1px 6px; border-radius: 4px; margin: 0 2px; vertical-align: middle;'
+        });
+        infoContainer.appendChild(typeChip);
+
+        infoContainer.appendChild(document.createTextNode(', '));
+
+        // Status Chip
+        const displayStatus = getDisplayStatus({ status: t.status });
+        const statusChip = createElement('span', `chip status-${t.status}`, {
+            textContent: displayStatus,
+            style: 'font-size: 11px; padding: 1px 6px; border-radius: 4px; margin: 0 2px; vertical-align: middle;'
+        });
+        infoContainer.appendChild(statusChip);
+
+        infoContainer.appendChild(document.createTextNode(')'));
+
+        if (index < teachers.length - 1) {
+            infoContainer.appendChild(document.createTextNode(', '));
+        }
+    });
+
     const timeText = formatTimeRange(schedule.start_time, schedule.end_time);
     const locationText = schedule.location || '上课地点未确定';
 
-    // 教师名称
-    const teacherSpan = createElement('span', '', {
-        textContent: teacherText,
-        style: 'font-weight: 500;'
-    });
-    infoContainer.appendChild(teacherSpan);
-    infoContainer.appendChild(document.createTextNode('，'));
-
-    // 课程类型chip
-    const typeChip = createElement('span', `chip ${typeClass}`, {
-        textContent: typeLabel
-    });
-    infoContainer.appendChild(typeChip);
-    infoContainer.appendChild(document.createTextNode('，'));
-
-    // 时间
-    infoContainer.appendChild(document.createTextNode(timeText));
-    infoContainer.appendChild(document.createTextNode('，'));
-
-    // 地点
-    const locationSpan = createElement('span', '', {
-        textContent: locationText
-    });
-    if (!schedule.location) {
-        locationSpan.style.color = '#9ca3af';
-        locationSpan.style.fontStyle = 'italic';
-    }
-    infoContainer.appendChild(locationSpan);
+    infoContainer.appendChild(document.createTextNode(`, ${timeText}, ${locationText}`));
 
     detail.appendChild(infoContainer);
 
@@ -258,12 +331,27 @@ function buildMobileScheduleDetail(schedule) {
         style: 'display: flex; justify-content: center; margin-top: 4px;'
     });
 
-    const statusChip = createElement('span', `chip status-${status}`, {
-        textContent: displayStatus,
-        style: 'font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 500;'
-    });
+    if (schedule.isMerged) {
+        // Merged state: do not show count badge as per user request
+        // Leave empty or show something else? User said "delete".
+    } else {
+        // Single item status row is redundant if we show status inline, but keeping it for consistency or maybe remove?
+        // User requirement: "Teacher (Type, Status)..."
+        // If we show status inline, maybe we don't need the big status chip below?
+        // But the mobile card design usually has a status summary.
+        // Let's keep it for single items as a summary, or maybe remove it to reduce clutter if inline is enough.
+        // However, for consistency with "merged" showing a count, single might show status?
+        // Actually, if inline status is shown, the bottom row is duplicate.
+        // But let's check the requirement: "Use previous style for Type and Status".
+        // Previous style was chips.
+        // I'll keep the bottom row for now as it provides a clear "Card Status" visual.
+        const statusChip = createElement('span', `chip status-${status}`, {
+            textContent: displayStatus,
+            style: 'font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 500;'
+        });
+        statusRow.appendChild(statusChip);
+    }
 
-    statusRow.appendChild(statusChip);
     detail.appendChild(statusRow);
 
     return detail;
@@ -326,68 +414,83 @@ function buildScheduleCard(schedule) {
     // Use Admin-like structure: group-picker-item
     const card = createElement('div', `group-picker-item slot-${slotId} status-${status} schedule-card`);
     card.dataset.scheduleId = schedule.id;
+    card.style.display = 'flex';
+    card.style.flexDirection = 'column';
+    card.style.gap = '4px';
 
-    // 1. Teacher Name
-    const teacherSpan = createElement('span', 'teacher-name', {
-        textContent: schedule.teacher_name || '未分配教师'
+    // 构建显示文本
+    // 格式：张老师（入户，已确认），周老师（入户，已确认），19:00-21:00，新课堂5楼
+    const teachers = schedule.teachers || [{
+        name: schedule.teacher_name || '未分配教师',
+        type: schedule.schedule_type_cn || schedule.schedule_type || '课程',
+        status: schedule.status
+    }];
+
+    const textContainer = createElement('div', '', {
+        style: 'font-size: 13px; line-height: 1.8; word-break: break-word;'
     });
-    card.appendChild(teacherSpan);
 
-    // 2. Type Chip
-    const typeCode = schedule.schedule_type || '';
-    const typeLabel = schedule.schedule_type_cn || SCHEDULE_TYPE_MAP[typeCode] || typeCode || '课程';
-    let typeClass = 'type-default';
-    // Map type label to class (simplified logic based on Admin CSS)
-    if (typeLabel.includes('入户')) typeClass = 'type-visit';
-    else if (typeLabel.includes('试教')) typeClass = 'type-trial';
-    else if (typeLabel.includes('评审')) typeClass = 'type-review';
-    else if (typeLabel.includes('半次')) typeClass = 'type-half-visit';
-    else if (typeLabel.includes('集体')) typeClass = 'type-group-activity';
+    teachers.forEach((t, index) => {
+        // Teacher Name
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = t.name;
+        textContainer.appendChild(nameSpan);
 
-    const typeChip = createElement('span', `chip ${typeClass}`, {
-        textContent: typeLabel
+        textContainer.appendChild(document.createTextNode(' ('));
+
+        // Type Chip
+        let typeClass = 'type-default';
+        if (t.type.includes('入户')) typeClass = 'type-visit';
+        else if (t.type.includes('试教')) typeClass = 'type-trial';
+        else if (t.type.includes('评审')) typeClass = 'type-review';
+        else if (t.type.includes('半次')) typeClass = 'type-half-visit';
+        else if (t.type.includes('集体')) typeClass = 'type-group-activity';
+
+        const typeChip = createElement('span', `chip ${typeClass}`, {
+            textContent: t.type,
+            style: 'font-size: 11px; padding: 1px 6px; border-radius: 4px; margin: 0 2px; vertical-align: middle;'
+        });
+        textContainer.appendChild(typeChip);
+
+        textContainer.appendChild(document.createTextNode(', '));
+
+        // Status Chip
+        const displayStatus = getDisplayStatus({ status: t.status });
+        const statusChip = createElement('span', `chip status-${t.status}`, {
+            textContent: displayStatus,
+            style: 'font-size: 11px; padding: 1px 6px; border-radius: 4px; margin: 0 2px; vertical-align: middle;'
+        });
+        textContainer.appendChild(statusChip);
+
+        textContainer.appendChild(document.createTextNode(')'));
+
+        if (index < teachers.length - 1) {
+            textContainer.appendChild(document.createTextNode(', '));
+        }
     });
-    card.appendChild(typeChip);
 
-    // 3. Status Chip
-    const statusChip = createElement('span', `chip status-${status}`, {
-        textContent: displayStatus
-    });
-    card.appendChild(statusChip);
-
-    // 4. Time
-    const timeSpan = createElement('span', 'time-text', {
-        textContent: ` ${formatTimeRange(schedule.start_time, schedule.end_time)}`
-    });
-    card.appendChild(timeSpan);
-
-    // 5. Location
+    const timeText = formatTimeRange(schedule.start_time, schedule.end_time);
     const locationText = schedule.location || '上课地点未确定';
-    const locSpan = createElement('span', 'location-text', {
-        textContent: ` ${locationText}`
-    });
-    if (!schedule.location) {
-        locSpan.style.color = '#9ca3af'; // Muted color for empty state
-        locSpan.style.fontStyle = 'italic';
-    }
-    card.appendChild(locSpan);
 
-    // Action Button (Confirm) - appended at the end if needed, or overlay?
-    // Admin uses a separate popup for actions. Here we need it inline.
-    // We can append it as a child, but group-picker-item is flex row (usually).
-    // Actually group-picker-item in Admin is `display: flex; align-items: center; gap: 8px;`
-    // So appending a button at the end works fine.
+    textContainer.appendChild(document.createTextNode(`, ${timeText}, ${locationText}`));
 
-    if (status === 'pending') {
+    card.appendChild(textContainer);
+
+    // Action Button or Merged Info
+    if (schedule.isMerged) {
+        // User requested to remove the count badge for merged items
+    } else if (status === 'pending') {
+        const actionRow = createElement('div', '', { style: 'display: flex; justify-content: flex-end; margin-top: 4px;' });
         const confirmBtn = createElement('button', 'btn small-btn primary-btn', {
             textContent: '确认'
         });
-        confirmBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; border-radius: 4px; margin-left: auto;';
+        confirmBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; border-radius: 4px;';
         confirmBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             handleConfirmSchedule(schedule.id);
         });
-        card.appendChild(confirmBtn);
+        actionRow.appendChild(confirmBtn);
+        card.appendChild(actionRow);
     }
 
     return card;

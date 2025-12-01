@@ -40,7 +40,10 @@ async function runAutoComplete() {
       // 选取待自动更新的记录（仅 pending/confirmed，日期已过，未自动更新过）
       const pick = await withRetry(() => db.query(
         `SELECT id, status FROM course_arrangement
-         WHERE ${dateCol} < CURRENT_DATE
+         WHERE (
+             ${dateCol} < CURRENT_DATE
+             OR (${dateCol} = CURRENT_DATE AND end_time < (CURRENT_TIME AT TIME ZONE 'Asia/Shanghai')::time)
+           )
            AND status IN ('pending','confirmed')
            AND last_auto_update IS NULL
          ORDER BY ${dateCol} ASC
@@ -71,7 +74,7 @@ async function runAutoComplete() {
           for (const id of ids) {
             const prev = prevStatusById.get(id) || 'pending';
             values.push(id, prev, 'completed', runId, 'daily_auto_completion');
-            placeholders.push(`($${i}, $${i+1}, $${i+2}, $${i+3}, $${i+4})`);
+            placeholders.push(`($${i}, $${i + 1}, $${i + 2}, $${i + 3}, $${i + 4})`);
             i += 5;
           }
           if (values.length) {
@@ -106,7 +109,7 @@ async function runAutoComplete() {
             })
           });
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     process.exitCode = 1;
   } finally {

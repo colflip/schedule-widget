@@ -192,14 +192,14 @@ function buildMobileScheduleDetail(schedule) {
         style: 'font-weight: 500;'
     });
     infoContainer.appendChild(studentSpan);
-    infoContainer.appendChild(document.createTextNode('，'));
+    infoContainer.appendChild(document.createTextNode(' ('));
 
     // 课程类型chip（应用颜色类）
     const typeChip = createElement('span', `chip ${typeClass}`, {
         textContent: typeLabel
     });
     infoContainer.appendChild(typeChip);
-    infoContainer.appendChild(document.createTextNode('，'));
+    infoContainer.appendChild(document.createTextNode(')，'));
 
     // 时间
     infoContainer.appendChild(document.createTextNode(timeText));
@@ -298,7 +298,7 @@ function renderHeader(weekDates) {
         const iso = toISODate(date);
         const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
         const weekday = weekdayNames[date.getDay() === 0 ? 6 : date.getDay() - 1];
-        const label = `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}\n${weekday}`;
+        const label = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}/${weekday}`;
         const th = createElement('th', '', { textContent: label });
         th.dataset.date = iso;
         row.appendChild(th);
@@ -391,8 +391,10 @@ function buildScheduleCard(schedule) {
 
     // Student Name
     const nameNode = document.createElement('span');
-    nameNode.textContent = studentName + '，';
+    nameNode.textContent = studentName;
     infoRow.appendChild(nameNode);
+
+    infoRow.appendChild(document.createTextNode(' ('));
 
     // Type Chip
     const typeChip = document.createElement('span');
@@ -411,7 +413,7 @@ function buildScheduleCard(schedule) {
     infoRow.appendChild(typeChip);
 
     // Separator after Type
-    infoRow.appendChild(document.createTextNode('，'));
+    infoRow.appendChild(document.createTextNode(')，'));
 
     // Time
     const timeNode = document.createElement('span');
