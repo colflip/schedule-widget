@@ -252,7 +252,7 @@
     padding-bottom: calc(2vw + var(--bottom-nav-height));
     /* 预留底部固定菜单高度，避免遮挡 */
     background-color: #FFFFFF;
-    overflow-y: auto;
+    /* overflow-y: auto; Removed to fix mobile scroll bounce */
     transition: margin-left 0.3s ease;
     /* 修改过渡效果 */
     /* margin-left: 250px; 默认的左边距 */
