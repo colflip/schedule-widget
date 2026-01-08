@@ -260,10 +260,8 @@ const studentController = {
                     ca.id,
                     ${dateExpr} AS date,
                     ca.start_time, ca.end_time, ca.status,
-                    ca.location,
                     ca.teacher_id, t.name as teacher_name,
-                    sty.name as schedule_type,
-                    sty.description as schedule_type_cn
+                    sty.name as schedule_type
                 FROM course_arrangement ca
                 JOIN teachers t ON ca.teacher_id = t.id
                 JOIN schedule_types sty ON ca.course_id = sty.id

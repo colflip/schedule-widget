@@ -192,14 +192,14 @@ function buildMobileScheduleDetail(schedule) {
         style: 'font-weight: 500;'
     });
     infoContainer.appendChild(studentSpan);
-    infoContainer.appendChild(document.createTextNode(' ('));
+    infoContainer.appendChild(document.createTextNode('，'));
 
     // 课程类型chip（应用颜色类）
     const typeChip = createElement('span', `chip ${typeClass}`, {
         textContent: typeLabel
     });
     infoContainer.appendChild(typeChip);
-    infoContainer.appendChild(document.createTextNode(')，'));
+    infoContainer.appendChild(document.createTextNode('，'));
 
     // 时间
     infoContainer.appendChild(document.createTextNode(timeText));
@@ -229,9 +229,6 @@ function buildMobileScheduleDetail(schedule) {
         style: 'font-size: 12px; padding: 4px 16px; border-radius: 999px; font-weight: 500; display: inline-block; cursor: pointer; transition: opacity 0.2s;'
     });
 
-    // Store initial status in dataset
-    visualChip.dataset.status = status;
-
     // 添加点击效果
     visualChip.onmousedown = () => visualChip.style.opacity = '0.7';
     visualChip.onmouseup = () => visualChip.style.opacity = '1';
@@ -240,25 +237,19 @@ function buildMobileScheduleDetail(schedule) {
     visualChip.ontouchend = () => visualChip.style.opacity = '1';
 
     visualChip.addEventListener('click', () => {
-        // Read current status from dataset (mutable state)
-        const currentStatus = visualChip.dataset.status;
-
         showActionSheet(
             '修改课程状态',
             SCHEDULE_STATUS_OPTIONS.map(opt => ({
                 label: opt.label,
                 value: opt.value,
-                selected: opt.value === currentStatus
+                selected: opt.value === status
             })),
             async (newStatus) => {
-                if (newStatus !== currentStatus) {
+                if (newStatus !== status) {
                     // 乐观更新视觉层
                     const newLabel = getStatusLabel(newStatus);
                     visualChip.textContent = newLabel;
                     visualChip.className = `chip status-${newStatus}`;
-
-                    // Update dataset immediately
-                    visualChip.dataset.status = newStatus;
 
                     // 调用原有逻辑处理状态变更
                     // 注意：handleStatusChange 可能需要 statusSelect 参数，这里传 null，需要确认 handleStatusChange 内部是否处理了 null
@@ -307,7 +298,7 @@ function renderHeader(weekDates) {
         const iso = toISODate(date);
         const weekdayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
         const weekday = weekdayNames[date.getDay() === 0 ? 6 : date.getDay() - 1];
-        const label = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}/${weekday}`;
+        const label = `${date.getMonth() + 1}-${String(date.getDate()).padStart(2, '0')}\n${weekday}`;
         const th = createElement('th', '', { textContent: label });
         th.dataset.date = iso;
         row.appendChild(th);
@@ -400,10 +391,8 @@ function buildScheduleCard(schedule) {
 
     // Student Name
     const nameNode = document.createElement('span');
-    nameNode.textContent = studentName;
+    nameNode.textContent = studentName + '，';
     infoRow.appendChild(nameNode);
-
-    infoRow.appendChild(document.createTextNode(' ('));
 
     // Type Chip
     const typeChip = document.createElement('span');
@@ -422,7 +411,7 @@ function buildScheduleCard(schedule) {
     infoRow.appendChild(typeChip);
 
     // Separator after Type
-    infoRow.appendChild(document.createTextNode(')，'));
+    infoRow.appendChild(document.createTextNode('，'));
 
     // Time
     const timeNode = document.createElement('span');

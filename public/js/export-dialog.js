@@ -11,7 +11,7 @@
  * 导出格式：Excel, CSV
  */
 
-window.ExportDialog = (function() {
+window.ExportDialog = (function () {
     // ============ 常量定义 ============
     const EXPORT_TYPES = {
         TEACHER_INFO: 'teacher_info',           // 老师信息数据
@@ -145,11 +145,11 @@ window.ExportDialog = (function() {
                                 <div class="export-date-presets">
                                     <label>快速选择:</label>
                                     <div class="export-preset-buttons">
-                                        <button type="button" class="export-preset-btn" data-preset="today">今日</button>
-                                        <button type="button" class="export-preset-btn" data-preset="week">本周</button>
-                                        <button type="button" class="export-preset-btn" data-preset="month">本月</button>
-                                        <button type="button" class="export-preset-btn" data-preset="quarter">本季度</button>
-                                        <button type="button" class="export-preset-btn" data-preset="year">本年</button>
+                                        <button type="button" class="export-preset-btn" data-preset="yesterday">昨天</button>
+                                        <button type="button" class="export-preset-btn" data-preset="last-week">上周</button>
+                                        <button type="button" class="export-preset-btn active" data-preset="last-month">上月</button>
+                                        <button type="button" class="export-preset-btn" data-preset="last-quarter">上季度</button>
+                                        <button type="button" class="export-preset-btn" data-preset="last-year">去年</button>
                                     </div>
                                 </div>
                                 <div class="export-date-validation" style="display: none;">
@@ -158,8 +158,8 @@ window.ExportDialog = (function() {
                                 </div>
                             </div>
 
-                            <!-- 文件格式选择 -->
-                            <div class="export-format-section">
+                            <!-- (已移除 CSV 选项，默认仅支持 Excel) -->
+                            <div class="export-format-section" style="display: none;">
                                 <h4>导出格式</h4>
                                 <div class="export-format-options">
                                     <label class="export-format-option">
@@ -167,13 +167,6 @@ window.ExportDialog = (function() {
                                         <div class="export-format-card">
                                             <span class="material-icons-round">table_chart</span>
                                             <span>Excel (.xlsx)</span>
-                                        </div>
-                                    </label>
-                                    <label class="export-format-option">
-                                        <input type="radio" name="exportFormat" value="csv" style="display: none;">
-                                        <div class="export-format-card">
-                                            <span class="material-icons-round">storage</span>
-                                            <span>CSV (.csv)</span>
                                         </div>
                                     </label>
                                 </div>
@@ -889,6 +882,17 @@ window.ExportDialog = (function() {
         // 关闭按钮
         document.querySelector('.export-dialog-close').addEventListener('click', close);
 
+        // 默认选中上月
+        setQuickSelectDate('last-month');
+
+        // 绑定预设按钮事件
+        document.querySelectorAll('.export-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const preset = btn.getAttribute('data-preset');
+                setQuickSelectDate(preset);
+            });
+        });
+
         // 导出类型选择
         document.querySelectorAll('.export-type-option').forEach(option => {
             option.addEventListener('click', () => {
@@ -903,11 +907,6 @@ window.ExportDialog = (function() {
                 const format = option.querySelector('input').value;
                 selectFormat(format);
             });
-        });
-
-        // 日期预设按钮
-        document.querySelectorAll('.export-preset-btn').forEach(btn => {
-            btn.addEventListener('click', () => applyDatePreset(btn.getAttribute('data-preset')));
         });
 
         // 日期输入变化
@@ -965,7 +964,7 @@ window.ExportDialog = (function() {
 
         // 如果该类型需要日期范围但尚未设置，默认设置为本月
         if (requiresDateRange && (!state.startDate || !state.endDate)) {
-            applyDatePreset('month');
+            setQuickSelectDate('month');
         }
 
         // 更新汇总
@@ -989,7 +988,7 @@ window.ExportDialog = (function() {
     /**
      * 应用日期预设
      */
-    function applyDatePreset(preset) {
+    function setQuickSelectDate(preset) {
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
@@ -998,33 +997,105 @@ window.ExportDialog = (function() {
         let start, end;
 
         switch (preset) {
-            case 'today':
-                start = end = `${year}-${month}-${day}`;
-                break;
-            case 'week': {
-                const weekStart = new Date(today);
-                weekStart.setDate(today.getDate() - today.getDay());
-                const startStr = weekStart.toISOString().split('T')[0];
-                const endStr = today.toISOString().split('T')[0];
-                start = startStr;
-                end = endStr;
+            case 'yesterday': {
+                const yest = new Date(today);
+                yest.setDate(today.getDate() - 1);
+                start = end = yest.toISOString().split('T')[0];
                 break;
             }
-            case 'month':
+            case 'last-week': {
+                // 上周：上周一到上周日
+                // 获取今天是周几 (0是周日)
+                const currentDay = today.getDay();
+                // 计算本周一的日期 (如果今天是周日(0)，要减6天；如果是周一(1)，减0天)
+                // JS getDay() 0=Sun, 1=Mon...
+                const diffToMon = currentDay === 0 ? 6 : currentDay - 1;
+                const thisMonday = new Date(today);
+                thisMonday.setDate(today.getDate() - diffToMon);
+
+                // 上周一 = 本周一 - 7天
+                const lastWeekMon = new Date(thisMonday);
+                lastWeekMon.setDate(thisMonday.getDate() - 7);
+
+                // 上周日 = 上周一 + 6天
+                const lastWeekSun = new Date(lastWeekMon);
+                lastWeekSun.setDate(lastWeekMon.getDate() + 6);
+
+                start = lastWeekMon.toISOString().split('T')[0];
+                end = lastWeekSun.toISOString().split('T')[0];
+                break;
+            }
+            case 'last-month': {
+                // 上个月完整一月
+                // 获取上个月的年份和月份
+                let y = today.getFullYear();
+                let m = today.getMonth(); // 0-11, happy with this for calculation
+
+                if (m === 0) { // 如果是一月，上月是去年12月
+                    y -= 1;
+                    m = 11;
+                } else {
+                    m -= 1;
+                }
+
+                const lastMonthStart = new Date(y, m, 1);
+                // 下个月第0天即为本月最后一天
+                const lastMonthEnd = new Date(y, m + 1, 0);
+
+                // 格式化 YYYY-MM-DD
+                // 注意 Month+1 因为 Date 对象 Month 是 0-indexed，但 ISOString 或者手写格式需要准确
+                // 简单点用 helper
+                const formatDate = (d) => {
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                start = formatDate(lastMonthStart);
+                end = formatDate(lastMonthEnd);
+                break;
+            }
+            case 'last-quarter': {
+                // 上季度
+                const currentMonth = today.getMonth(); // 0-11
+                const currentQuarter = Math.floor(currentMonth / 3); // 0, 1, 2, 3
+
+                let targetYear = year;
+                let targetQuarter = currentQuarter - 1;
+
+                if (targetQuarter < 0) {
+                    targetYear -= 1;
+                    targetQuarter = 3;
+                }
+
+                const qStartMonth = targetQuarter * 3;
+                const qEndMonth = targetQuarter * 3 + 2;
+
+                const qStartDate = new Date(targetYear, qStartMonth, 1);
+                const qEndDate = new Date(targetYear, qEndMonth + 1, 0);
+
+                const formatDate = (d) => {
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    return `${year}-${month}-${day}`;
+                };
+
+                start = formatDate(qStartDate);
+                end = formatDate(qEndDate);
+                break;
+            }
+            case 'last-year':
+                start = `${year - 1}-01-01`;
+                end = `${year - 1}-12-31`;
+                break;
+            case 'month': // Current month
                 start = `${year}-${month}-01`;
-                end = `${year}-${month}-${day}`;
+                end = new Date(year, today.getMonth() + 1, 0).toISOString().split('T')[0];
                 break;
-            case 'quarter': {
-                const quarter = Math.floor(today.getMonth() / 3);
-                const quarterStart = new Date(year, quarter * 3, 1);
-                const quarterEnd = new Date(today);
-                start = quarterStart.toISOString().split('T')[0];
-                end = quarterEnd.toISOString().split('T')[0];
-                break;
-            }
-            case 'year':
-                start = `${year}-01-01`;
-                end = `${year}-${month}-${day}`;
+            case 'today': // Today
+                start = end = today.toISOString().split('T')[0];
                 break;
         }
 
@@ -1082,6 +1153,13 @@ window.ExportDialog = (function() {
      * 更新配置汇总
      */
     function updateConfigSummary() {
+        if (!state.selectedType) {
+            document.getElementById('exportConfigType').textContent = '-';
+            document.getElementById('exportConfigRange').textContent = '-';
+            document.querySelector('.export-summary-date').style.display = 'none';
+            return;
+        }
+
         const typeConfig = EXPORT_TYPE_CONFIG[state.selectedType];
         document.getElementById('exportConfigType').textContent = typeConfig ? typeConfig.label : '-';
 
@@ -1109,6 +1187,10 @@ window.ExportDialog = (function() {
         if (currentStep === 1) {
             nextBtn.disabled = !state.selectedType;
         } else if (currentStep === 2) {
+            if (!state.selectedType) {
+                nextBtn.disabled = true;
+                return;
+            }
             const typeConfig = EXPORT_TYPE_CONFIG[state.selectedType];
             if (typeConfig?.requiresDateRange) {
                 nextBtn.disabled = !state.startDate || !state.endDate;
@@ -1186,7 +1268,7 @@ window.ExportDialog = (function() {
         if (stepNum === 2) {
             const typeConfig = EXPORT_TYPE_CONFIG[state.selectedType];
             if (typeConfig?.requiresDateRange && (!state.startDate || !state.endDate)) {
-                applyDatePreset('month');
+                setQuickSelectDate('month');
             }
         }
 
@@ -1225,8 +1307,21 @@ window.ExportDialog = (function() {
                 }
                 const startDateStr = state.startDate.toISOString().split('T')[0];
                 const endDateStr = state.endDate.toISOString().split('T')[0];
+                // 兼容不同后端命名习惯 (camelCase 和 snake_case)
                 params.append('startDate', startDateStr);
                 params.append('endDate', endDateStr);
+                params.append('start_date', startDateStr);
+                params.append('end_date', endDateStr);
+            }
+
+            // 确保 type 也传对
+            params.append('type_id', state.selectedType || '');
+
+
+
+            // 确保类型数据已加载
+            if (window.ScheduleTypesStore) {
+                await window.ScheduleTypesStore.ensureLoaded();
             }
 
             updateProgress(20, '正在加载数据...');
@@ -1235,6 +1330,7 @@ window.ExportDialog = (function() {
             // 调用导出 API
             const response = await window.apiUtils.get(`/admin/export-advanced?${params.toString()}`);
 
+
             updateProgress(60, '正在生成文件...');
             await new Promise(r => setTimeout(r, 300));
 
@@ -1242,14 +1338,473 @@ window.ExportDialog = (function() {
                 throw new Error('导出 API 返回为空');
             }
 
-            // API 直接返回导出结果对象 {format, data, columns?, filename}
+            // API 直接返回导出结果对象 {format, data, columns?, filename} 或直接返回数组
             const exportResult = response;
 
-            // 生成文件
+            // 5. 构建优化后的文件名
+            const nowStr = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12); // YYYYMMDDHHmm
+            let filename = `${typeConfig.label || '导出数据'}`;
+
+            if (typeConfig.requiresDateRange && state.startDate && state.endDate) {
+                const s = state.startDate.toISOString().split('T')[0].replace(/-/g, '');
+                const e = state.endDate.toISOString().split('T')[0].replace(/-/g, '');
+                filename += `_${s}-${e}`;
+            }
+            filename += `_${nowStr}.${format === EXPORT_FORMATS.EXCEL ? 'xlsx' : 'csv'}`;
+
+            // 生成文件 - 传递 filename 参数
+            // 兼容直接返回数组，或嵌套在 data.data 中的情况
+            let rawData = [];
+
+            if (Array.isArray(exportResult)) {
+                rawData = exportResult;
+            } else if (exportResult && exportResult.data) {
+                if (Array.isArray(exportResult.data)) {
+                    rawData = exportResult.data;
+                } else if (Array.isArray(exportResult.data.data)) {
+                    rawData = exportResult.data.data;
+                }
+            }
+
+
+
+            const transformedData = transformExportData(rawData);
+
             if (format === EXPORT_FORMATS.EXCEL) {
-                await generateExcelFile(exportResult.data);
+                await generateExcelFile(transformedData, filename);
             } else {
-                generateCsvFile(exportResult.data);
+                // CSV 不支持多 Sheet，如果是多 Sheet 数据，默认仅导出 "总览表"
+                let csvData = transformedData;
+
+                if (!Array.isArray(transformedData)) {
+                    if (transformedData['总览表']) {
+                        csvData = transformedData['总览表'];
+                    } else if (typeof transformedData === 'object') {
+                        // 兜底：如果没找到"总览表"，取第一个是数组的值
+                        const values = Object.values(transformedData);
+                        const firstArray = values.find(v => Array.isArray(v));
+                        if (firstArray) {
+                            csvData = firstArray;
+                        }
+                    }
+                }
+
+                generateCsvFile(csvData, filename);
+            }
+
+
+            /**
+             * 转换导出数据：映射列名，格式化类型和状态
+             * @param {Array} originalData 原始数据数组
+             * @returns {Array|Object} 转换后的数据数组或多 Sheet 对象
+             */
+            function transformExportData(originalData) {
+                if (!Array.isArray(originalData)) return [];
+
+                // 状态映射
+                const statusMap = {
+                    1: '正常',
+                    0: '已取消',
+                    2: '已完成',
+                    'pending': '待确认',
+                    'confirmed': '已确认',
+                    'completed': '已完成',
+                    'cancelled': '已取消'
+                };
+
+                // 获取类型名称的辅助函数
+                const getTypeName = (typeIdOrName) => {
+                    if (!typeIdOrName) return '';
+                    // 如果是数字ID，尝试查找
+                    if (window.ScheduleTypesStore) {
+                        const type = window.ScheduleTypesStore.getById(typeIdOrName);
+                        if (type) return type.name || type.description;
+                    }
+                    return String(typeIdOrName);
+                };
+
+                // 转换基础数据（第一张表：排课明细）
+                const baseData = originalData.map(row => {
+                    // 解析日期和时间
+                    let dateStr = row.date || row.arr_date || row.class_date || row['日期'] || '';
+                    if (dateStr && dateStr.includes('T')) {
+                        dateStr = dateStr.split('T')[0];
+                    }
+
+                    // 计算星期
+                    let weekStr = '';
+                    if (dateStr) {
+                        const date = new Date(dateStr);
+                        if (!isNaN(date.getTime())) {
+                            const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                            weekStr = days[date.getDay()];
+                        }
+                    }
+
+                    // 3. 类型: 中文 (英文)
+                    // 后端返回的 Keys 中包含 '类型' (值为英文 name, e.g. 'visit')
+                    const rawTypeVal = row['类型'] || row.course_id || row.courseId || row.type || row.schedule_type || row.type_id;
+                    let typeKey = '';
+                    let typeDesc = '未知';
+
+                    // 尝试从 Store 获取
+                    if (window.ScheduleTypesStore && typeof window.ScheduleTypesStore.getAll === 'function') {
+                        const allTypes = window.ScheduleTypesStore.getAll();
+                        let t = null;
+
+                        // 1. 尝试通过 name 匹配 (e.g. rawTypeVal === 'visit')
+                        t = allTypes.find(item => item.name === rawTypeVal);
+
+                        // 2. 如果没找到，尝试通过 ID 匹配
+                        if (!t) {
+                            t = allTypes.find(item => String(item.id) === String(rawTypeVal));
+                        }
+
+                        if (t) {
+                            typeKey = t.name || '';         // e.g. visit
+                            typeDesc = t.description || '未知'; // e.g. 入户
+                        }
+                    }
+
+                    // 如果 Store 查找失败，但有原始值
+                    if (typeDesc === '未知' && rawTypeVal) {
+                        typeKey = String(rawTypeVal);
+                    }
+
+                    const typeStr = (typeDesc !== '未知' || (typeKey && typeKey !== '0')) ? `${typeDesc} (${typeKey})` : '未知';
+
+                    // 4. 时间段 start_time-end_time
+                    // 后端返回的 Keys 中包含 '时间'，或尝试 start_time
+                    let timeStr = '';
+
+                    // 优先检查 start_time / end_time (以防后端修正后返回这些字段)
+                    let sTime = row.start_time || row.startTime || row.begin_time;
+                    let eTime = row.end_time || row.endTime || row.finish_time;
+
+                    if (sTime && eTime) {
+                        const fmt = (t) => {
+                            if (!t) return '';
+                            const match = String(t).match(/(\d{1,2}:\d{2})/);
+                            return match ? match[1].padStart(5, '0') : String(t);
+                        };
+                        timeStr = `${fmt(sTime)}-${fmt(eTime)}`;
+                    } else if (row['时间']) {
+                        // 如果后端直接返回 '时间' 字段
+                        timeStr = row['时间'];
+                    } else if (row.time_range && row.time_range !== 'undefined-undefined') {
+                        timeStr = row.time_range;
+                    }
+
+                    // 格式化创建时间
+                    let createdAtStr = row.created_at || row['创建时间'] || '';
+                    if (createdAtStr) {
+                        if (String(createdAtStr).includes('-') && String(createdAtStr).includes(':')) {
+                            // 可能是已经格式化的，不做处理
+                        } else {
+                            try {
+                                const d = new Date(createdAtStr);
+                                if (!isNaN(d.getTime())) {
+                                    createdAtStr = d.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
+                                }
+                            } catch (e) { }
+                        }
+                    }
+
+                    const statusVal = row.status || row['状态'];
+
+                    return {
+                        '教师名称': row.teacher_name || row.name || row['教师名称'] || '',
+                        '学生名称': row.student_name || row['学生名称'] || '',
+                        '类型': typeStr,
+                        '日期': dateStr,
+                        '星期': weekStr,
+                        '时间段': timeStr,
+                        '状态': statusMap[statusVal] || statusVal || '未知',
+                        '创建时间': createdAtStr,
+                        '排课ID': row.id || row.schedule_id || row['排课ID'] || '',
+                        '教师ID': row.teacher_id || row['教师ID'] || '',
+                        '学生ID': row.student_id || row['学生ID'] || '',
+                        '备注': row.remark || row.notes || row['备注'] || ''
+                    };
+                });
+
+                // 如果是老师排课记录导出，增加第二张表：分老师明细表
+                if (state.selectedType === EXPORT_TYPES.TEACHER_SCHEDULE) {
+                    const statsData = aggregateTeacherStats(originalData);
+                    return {
+                        '总览表': baseData,
+                        '分老师明细表': statsData
+                    };
+                }
+
+                // 如果是学生排课记录导出
+                if (state.selectedType === EXPORT_TYPES.STUDENT_SCHEDULE) {
+                    // 1. 交换第一列和第二列 (学生名称 <-> 教师名称)
+                    const reorderedBaseData = baseData.map(row => {
+                        // 创建新对象以保证键的顺序
+                        return {
+                            '学生名称': row['学生名称'],
+                            '教师名称': row['教师名称'],
+                            ...row // 展开剩余属性，注意：后续同名属性会覆盖前面的，但这里我们主要为了调整前两个 keys 的顺序
+                        };
+                        // 上面的写法其实不能保证 Key 的顺序（JS对象的Key是无序的，但在大多数导出库中，可能依赖 Key 添加顺序或者 columns定义）
+                        // 为了保险起见，我们重新构造对象
+                        const newRow = {};
+                        newRow['学生名称'] = row['学生名称'];
+                        newRow['教师名称'] = row['教师名称'];
+                        Object.keys(row).forEach(k => {
+                            if (k !== '学生名称' && k !== '教师名称') {
+                                newRow[k] = row[k];
+                            }
+                        });
+                        return newRow;
+                    });
+
+                    // 2. 生成学生统计表
+                    const statsData = aggregateStudentStats(originalData);
+
+                    return {
+                        '总览表': reorderedBaseData,
+                        '分学生明细表': statsData
+                    };
+                }
+
+                return baseData;
+            }
+
+            /**
+             * 聚合学生统计数据 (第二张表)
+             * 逻辑：
+             * 1. 按学生汇总
+             * 2. 入户/评审 去重逻辑：同一日期和时间(start_time)的n个老师授课/评审，当作一次。
+             */
+            function aggregateStudentStats(rawData) {
+                const statsMap = new Map();
+
+                rawData.forEach(row => {
+                    // 排除已取消
+                    const statusVal = row.status || row['状态'] || '';
+                    const status = String(statusVal).toLowerCase();
+                    if (status === '0' || status === 'cancelled' || status === '已取消') return;
+
+                    const studentName = row.student_name || row['学生名称'] || '未知学生';
+                    if (!statsMap.has(studentName)) {
+                        statsMap.set(studentName, {
+                            name: studentName,
+                            // trial: 0, // Removed per request
+                            consultation: 0,
+                            group_activity: 0,
+                            others: 0,
+                            // 用于去重计数: key = date + '_' + start_time
+                            visitSet: new Set(),
+                            reviewSet: new Set(),
+
+                            dates: new Set()
+                        });
+                    }
+
+                    const stat = statsMap.get(studentName);
+
+                    // 记录日期
+                    let dateStr = row.date || row.arr_date || row.class_date || row['日期'] || '';
+                    if (dateStr && dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+                    if (dateStr) stat.dates.add(dateStr);
+
+                    // 时间 Key 用于去重
+                    let startTime = row.start_time || '';
+                    if (startTime && startTime.length > 5) startTime = startTime.substring(0, 5);
+                    const timeKey = `${dateStr}_${startTime}`; // e.g. "2023-01-01_10:00"
+
+                    // 类型判断
+                    let typeKey = '';
+                    const typeVal = row.course_id || row.type || row.schedule_type || row['类型'];
+                    if (window.ScheduleTypesStore && window.ScheduleTypesStore.getById) {
+                        const t = window.ScheduleTypesStore.getById(typeVal);
+                        typeKey = t ? t.name : String(typeVal);
+                    } else {
+                        typeKey = String(typeVal || '');
+                    }
+                    typeKey = typeKey.toLowerCase();
+
+                    // 统计逻辑
+                    if (typeKey === 'visit' || typeKey === 'half_visit' || /visit/i.test(typeKey)) {
+                        stat.visitSet.add(timeKey);
+                    } else if (typeKey === 'review' || typeKey === 'review_record' || /review/i.test(typeKey)) {
+                        // 评审 和 评审记录 都算作评审，且去重
+                        stat.reviewSet.add(timeKey);
+                    } else if (typeKey === 'trial' || /trial/i.test(typeKey)) {
+                        stat.trial++;
+                    } else if (typeKey === 'consultation' || /consultation/i.test(typeKey)) {
+                        stat.consultation++;
+                    } else if (typeKey === 'group_activity' || /group/i.test(typeKey)) {
+                        stat.group_activity++;
+                    } else {
+                        stat.others++;
+                    }
+                });
+
+                const result = [];
+                statsMap.forEach(stat => {
+                    // 计算日期范围
+                    let dateRangeStr = '';
+                    if (state.startDate && state.endDate) {
+                        const s = state.startDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+                        const e = state.endDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+                        dateRangeStr = `${s}至${e}`;
+                    } else {
+                        const sortedDates = Array.from(stat.dates).sort();
+                        if (sortedDates.length > 0) {
+                            dateRangeStr = sortedDates.length === 1 ? sortedDates[0] : `${sortedDates[0]}至${sortedDates[sortedDates.length - 1]}`;
+                        }
+                    }
+
+                    const visitCount = stat.visitSet.size;
+                    const reviewCount = stat.reviewSet.size;
+
+                    // 备注：学生姓名，日期段，X次... (仅显示次数 > 0 的项)
+                    const remarkParts = [stat.name, dateRangeStr];
+                    if (visitCount > 0) remarkParts.push(`${visitCount}次入户`);
+                    if (reviewCount > 0) remarkParts.push(`${reviewCount}次评审`);
+                    if (stat.group_activity > 0) remarkParts.push(`${stat.group_activity}次集体活动`);
+                    if (stat.consultation > 0) remarkParts.push(`${stat.consultation}次咨询`);
+
+                    const remarks = remarkParts.join('，');
+
+                    result.push({
+                        '姓名': stat.name,
+                        '入户': visitCount,
+                        '评审': reviewCount,
+                        '集体活动': stat.group_activity,
+                        '咨询': stat.consultation,
+                        '备注': remarks
+                    });
+                });
+
+                return result;
+            }
+
+            /**
+             * 聚合老师统计数据 (第二张表)
+             * @param {Array} rawData 原始数据
+             */
+            function aggregateTeacherStats(rawData) {
+                const statsMap = new Map();
+
+                rawData.forEach(row => {
+                    // 排除已取消的记录
+                    const statusVal = row.status || row['状态'] || '';
+                    const status = String(statusVal).toLowerCase();
+                    if (status === '0' || status === 'cancelled' || status === '已取消') {
+                        return;
+                    }
+
+                    const teacherName = row.teacher_name || row.name || row['教师名称'] || '未知老师';
+                    if (!statsMap.has(teacherName)) {
+                        statsMap.set(teacherName, {
+                            name: teacherName,
+                            trial: 0,        // 试教
+                            home_visit: 0,   // 入户
+                            half_visit: 0,   // 半次入户
+                            review: 0,       // 评审
+                            review_record: 0,// 评审记录
+                            consultation: 0, // 咨询/advisory
+                            group_activity: 0, // 集体活动
+                            others: 0,
+                            dates: new Set() // 用于记录日期范围
+                        });
+                    }
+
+                    const stat = statsMap.get(teacherName);
+
+                    // 记录日期
+                    let dateStr = row.date || row.arr_date || row.class_date || row['日期'] || '';
+                    if (dateStr && dateStr.includes('T')) dateStr = dateStr.split('T')[0];
+                    if (dateStr) stat.dates.add(dateStr);
+
+                    // 统计类型
+                    let typeKey = ''; // english key: visit, review, etc.
+                    // let typeName = ''; // localized name
+
+                    const typeVal = row.course_id || row.type || row.schedule_type || row['类型'];
+
+                    if (window.ScheduleTypesStore && window.ScheduleTypesStore.getById) {
+                        const t = window.ScheduleTypesStore.getById(typeVal);
+                        typeKey = t ? t.name : String(typeVal); // name is usually the english key
+                    } else {
+                        // Fallback if store not loaded
+                        typeKey = String(typeVal || '');
+                    }
+
+                    // Normalize key
+                    typeKey = typeKey.toLowerCase();
+
+                    // Strict matching based on schedule_types table (image provided by user)
+                    if (typeKey === 'visit') stat.home_visit++;
+                    else if (typeKey === 'half_visit') stat.half_visit++;
+                    else if (typeKey === 'review') stat.review++;
+                    else if (typeKey === 'review_record') stat.review_record++;
+                    else if (typeKey === 'trial') stat.trial++;
+                    else if (typeKey === 'consultation' || typeKey === 'advisory') stat.consultation++;
+                    else if (typeKey === 'group_activity') stat.group_activity++;
+                    else {
+                        // Regex fallbacks only if strict match fails
+                        if (/half_visit/i.test(typeKey)) stat.half_visit++;
+                        else if (/visit/i.test(typeKey)) stat.home_visit++;
+                        else if (/review_record/i.test(typeKey)) stat.review_record++;
+                        else if (/review/i.test(typeKey)) stat.review++;
+                        else if (/trial/i.test(typeKey)) stat.trial++;
+                        else if (/consultation|advisory/i.test(typeKey)) stat.consultation++;
+                        else if (/group/i.test(typeKey)) stat.group_activity++;
+                        else stat.others++;
+                    }
+                });
+
+                const result = [];
+                // 转换 Map 为数组并可以计算衍生字段
+                statsMap.forEach(stat => {
+                    // 计算日期范围字符串
+                    let dateRangeStr = '';
+                    if (state.startDate && state.endDate) {
+                        const s = state.startDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+                        const e = state.endDate.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+                        dateRangeStr = `${s}至${e}`;
+                    } else {
+                        const sortedDates = Array.from(stat.dates).sort();
+                        if (sortedDates.length > 0) {
+                            dateRangeStr = sortedDates.length === 1 ? sortedDates[0] : `${sortedDates[0]}至${sortedDates[sortedDates.length - 1]}`;
+                        }
+                    }
+
+                    // 计算备注中显示的合并数值
+                    // 1次评审记录 = 0.5次入户 + 1次评审
+                    // 半次入户 = 0.5次入户
+                    const effectiveVisits = stat.home_visit + stat.half_visit * 0.5 + (stat.review_record * 0.5);
+                    const effectiveReviews = stat.review + (stat.review_record * 1);
+
+                    // 备注：姓名，导出日期段，a次试教，b次入户... (折算后，过滤 0 值)
+                    const remarkParts = [stat.name, dateRangeStr];
+                    if (stat.trial > 0) remarkParts.push(`${stat.trial}次试教`);
+                    if (effectiveVisits > 0) remarkParts.push(`${effectiveVisits}次入户`);
+                    if (effectiveReviews > 0) remarkParts.push(`${effectiveReviews}次评审`);
+                    if (stat.group_activity > 0) remarkParts.push(`${stat.group_activity}次集体活动`);
+                    if (stat.consultation > 0) remarkParts.push(`${stat.consultation}次咨询`);
+
+                    const remarks = remarkParts.join('，');
+
+                    result.push({
+                        '姓名': stat.name,
+                        '试教': stat.trial,
+                        '入户': stat.home_visit,
+                        '半次入户': stat.half_visit,
+                        '评审': stat.review,
+                        '评审记录': stat.review_record,
+                        '集体活动': stat.group_activity,
+                        '咨询': stat.consultation,
+                        '备注': remarks
+                    });
+                });
+
+                return result;
             }
 
             updateProgress(100, '导出完成！');
@@ -1285,49 +1840,137 @@ window.ExportDialog = (function() {
 
     /**
      * 生成 Excel 文件
+     * @param {Object|Array} exportData - 导出数据 (支持 { sheetName: [], ... } 多 Sheet 结构)
+     * @param {string} filename - 文件名 (可选)
      */
-    async function generateExcelFile(exportData) {
+    async function generateExcelFile(exportData, filename) {
         // 确保 XLSX 库已加载
         if (typeof XLSX === 'undefined') {
             await loadXLSXLibrary();
         }
 
-        // 处理导出数据：可能是对象数组或包含 data 字段的响应对象
-        let data = Array.isArray(exportData) ? exportData : (exportData && exportData.data ? exportData.data : []);
-        
-        // 确保 data 是数组
-        if (!Array.isArray(data)) {
-            console.error('导出数据格式不正确:', exportData);
-            throw new Error('导出数据格式不正确');
+        const workbook = XLSX.utils.book_new();
+
+        // 统一处理成 { SheetName: DataArray } 格式
+        let sheets = {};
+        if (Array.isArray(exportData)) {
+            sheets['数据'] = exportData;
+        } else if (exportData && typeof exportData === 'object' && !exportData.data) {
+            // 认为是多 Sheet 结构
+            sheets = exportData;
+        } else {
+            // 兼容旧结构或错误结构
+            let data = (exportData && exportData.data) ? exportData.data : [];
+            sheets['数据'] = Array.isArray(data) ? data : [];
         }
 
-        if (data.length === 0) {
+        let hasData = false;
+        Object.keys(sheets).forEach(sheetName => {
+            const data = sheets[sheetName];
+            if (Array.isArray(data) && data.length > 0) {
+                const worksheet = XLSX.utils.json_to_sheet(data);
+
+                // 1. 计算自适应列宽
+                const colWidths = [];
+                const headers = Object.keys(data[0]);
+
+                // 预设宽度
+                const minWidths = {
+                    '时间段': 15,
+                    '备注': 30, // 备注宽一点
+                    '创建时间': 20
+                };
+
+                headers.forEach((key, i) => {
+                    let maxLength = minWidths[key] || 10;
+                    // 计算标题长度 (中文算2)
+                    const headerLen = key.replace(/[\u4e00-\u9fa5]/g, 'aa').length;
+                    if (headerLen > maxLength) maxLength = headerLen;
+
+                    // 遍历前 50 行数据
+                    const sampleSize = Math.min(data.length, 50);
+                    for (let r = 0; r < sampleSize; r++) {
+                        const val = data[r][key];
+                        if (val) {
+                            const strVal = String(val);
+                            const len = strVal.replace(/[\u4e00-\u9fa5]/g, 'aa').length;
+                            if (len > maxLength) maxLength = len;
+                        }
+                    }
+                    // 限制最大宽度，避免过宽
+                    colWidths[i] = { wch: Math.min(maxLength + 2, 60) };
+                });
+                worksheet['!cols'] = colWidths;
+
+                // 2. 冻结首行
+                worksheet['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft', state: 'frozen' };
+
+                // 3. 尝试设置样式（注意：标准 SheetJS 可能不支持，但加了不报错）
+                // 设置第一行（标题）加粗
+                // 遍历所有数据单元格，如果是备注列，设置自动换行
+                const range = XLSX.utils.decode_range(worksheet['!ref']);
+                for (let R = range.s.r; R <= range.e.r; ++R) {
+                    for (let C = range.s.c; C <= range.e.c; ++C) {
+                        const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
+                        if (!worksheet[cell_address]) continue;
+
+                        // 首行加粗
+                        if (R === 0) {
+                            worksheet[cell_address].s = { font: { bold: true }, alignment: { horizontal: "center" } };
+                        }
+
+                        // 备注列自动换行
+                        // 获取列名
+                        const key = headers[C];
+                        if (key === '备注') {
+                            if (!worksheet[cell_address].s) worksheet[cell_address].s = {};
+                            worksheet[cell_address].s.alignment = { wrapText: true, vertical: "top" };
+                        }
+                    }
+                }
+
+                XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+                hasData = true;
+            }
+        });
+
+        if (!hasData) {
             throw new Error('没有可导出的数据');
         }
 
-        const workbook = XLSX.utils.book_new();
-        const worksheet = XLSX.utils.json_to_sheet(data);
-
-        // 调整列宽
-        const maxWidth = 20;
-        const colWidth = {};
-        Object.keys(data[0] || {}).forEach(key => {
-            colWidth[key] = Math.min(maxWidth, Math.max(key.length, 10));
-        });
-        worksheet['!cols'] = Object.values(colWidth).map(w => ({ wch: w }));
-
-        XLSX.utils.book_append_sheet(workbook, worksheet, '数据');
-        XLSX.writeFile(workbook, `export_${Date.now()}.xlsx`);
+        // 使用传入的文件名或默认文件名
+        const finalFilename = filename || `export_${Date.now()}.xlsx`;
+        XLSX.writeFile(workbook, finalFilename);
     }
 
     /**
      * 生成 CSV 文件
+     * @param {Object|Array|string} exportData - 导出数据
+     * @param {string} filename - 文件名 (可选)
      */
-    function generateCsvFile(exportData) {
-        // 处理导出数据：可能是字符串或包含 data 字段的响应对象
+    function generateCsvFile(exportData, filename) {
+        // 处理导出数据：可能是字符串或包含 data 字段的响应对象，或者是直接的数组
         let csvContent = null;
-        
-        if (typeof exportData === 'string') {
+
+        if (Array.isArray(exportData)) {
+            // 如果直接是数组 (Transformed data)
+            const data = exportData;
+            if (data.length === 0) {
+                throw new Error('没有可导出的数据');
+            }
+            const headers = Object.keys(data[0]);
+            const rows = data.map(row =>
+                headers.map(header => {
+                    const value = row[header];
+                    if (value === null || value === undefined) return '""';
+                    return `"${String(value).replace(/"/g, '""')}"`;
+                }).join(',')
+            );
+            csvContent = [
+                headers.map(h => `"${h}"`).join(','),
+                ...rows
+            ].join('\n');
+        } else if (typeof exportData === 'string') {
             // 如果已经是 CSV 字符串
             csvContent = exportData;
         } else if (exportData && typeof exportData === 'object') {
@@ -1363,7 +2006,8 @@ window.ExportDialog = (function() {
         const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = `export_${Date.now()}.csv`;
+        // 使用传入的文件名或默认文件名
+        link.download = filename || `export_${Date.now()}.csv`;
         link.click();
     }
 
@@ -1397,19 +2041,54 @@ window.ExportDialog = (function() {
     }
 
     /**
+     * 重置状态
+     */
+    function resetState() {
+        state.selectedType = null;
+        state.selectedFormat = EXPORT_FORMATS.EXCEL;
+        state.isExporting = false;
+
+        // 恢复单选框默认
+        document.querySelectorAll('input[name="exportType"]').forEach(radio => radio.checked = false);
+        document.querySelector(`input[value="${EXPORT_FORMATS.EXCEL}"]`).checked = true;
+
+        // 默认设置为上月
+        setQuickSelectDate('last-month');
+
+        // 回到第一步
+        goToStep(1);
+
+        // 重置进度
+        document.querySelector('.export-progress-message').style.display = 'flex';
+        document.getElementById('exportProgressIcon').textContent = 'hourglass_empty';
+        document.getElementById('exportProgressMsg').textContent = '准备导出...';
+        document.getElementById('exportProgressMsg').parentElement.className = 'export-progress-message';
+        document.getElementById('exportProgressFill').style.width = '0%';
+        document.getElementById('exportProgressPercent').textContent = '0%';
+
+        const details = document.getElementById('exportProgressDetails');
+        details.innerHTML = '';
+        details.style.display = 'none';
+
+        updateConfigSummary();
+    }
+
+    /**
+     * 显示对话框
+     */
+    function show() {
+        init();
+        resetState(); // 每次打开重置状态
+        dialogElement.style.display = 'flex';
+        modalOverlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    }
+
+    /**
      * 打开对话框
      */
     function open() {
-        init();
-        state.isOpen = true;
-        modalOverlay.style.display = 'flex';
-
-        // 重置到第一步
-        goToStep(1);
-        state.selectedType = null;
-        state.startDate = null;
-        state.endDate = null;
-        state.isExporting = false;
+        show(); // 调用新的 show 函数来处理初始化和状态重置
     }
 
     /**
@@ -1432,7 +2111,7 @@ window.ExportDialog = (function() {
         // 公开 applyDatePreset，供页面其它脚本调用以同步预设
         applyPreset: (preset) => {
             // ensure dialog created
-            try { init(); } catch(_) {}
+            try { init(); } catch (_) { }
             try { applyDatePreset(preset); } catch (e) { console.warn('applyPreset failed', e); }
         }
     };

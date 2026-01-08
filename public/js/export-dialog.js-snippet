@@ -1,0 +1,68 @@
+    /**
+     * 转换导出数据：映射列名，格式化类型和状态
+     * @param {Array} originalData 原始数据数组
+     * @returns {Array} 转换后的数据数组
+     */
+    function transformExportData(originalData) {
+        if (!Array.isArray(originalData)) return [];
+
+        // 状态映射
+        const statusMap = {
+            1: '正常',
+            0: '已取消',
+            2: '已完成' // 假设值，根据实际情况调整
+        };
+
+        // 获取类型名称的辅助函数
+        const getTypeName = (typeIdOrName) => {
+            if (!typeIdOrName) return '';
+            // 如果是数字ID，尝试查找
+            if (!isNaN(typeIdOrName) && window.ScheduleTypesStore) {
+                const type = window.ScheduleTypesStore.getById(typeIdOrName);
+                if (type) return type.name || type.description;
+            }
+            return typeIdOrName; // 已经是名称直接返回
+        };
+
+        return originalData.map(row => {
+            // 解析日期和时间
+            let dateStr = row.date || '';
+            if (dateStr && dateStr.includes('T')) {
+                dateStr = dateStr.split('T')[0];
+            }
+            
+            let timeStr = '';
+            if (row.start_time && row.end_time) {
+                timeStr = `${row.start_time}-${row.end_time}`;
+            } else if (row.time_range) {
+                timeStr = row.time_range;
+            }
+
+            // 格式化创建时间
+            let createdAtStr = row.created_at || '';
+            if (createdAtStr) {
+                const d = new Date(createdAtStr);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mm = String(d.getMinutes()).padStart(2, '0');
+                const ss = String(d.getSeconds()).padStart(2, '0');
+                createdAtStr = `${y}-${m}-${dd} ${hh}:${mm}:${ss}`;
+            }
+
+            return {
+                '教师名称': row.teacher_name || '',
+                '学生名称': row.student_name || '',
+                '类型': getTypeName(row.schedule_type || row.type),
+                '日期': dateStr,
+                '时间': timeStr,
+                '状态': statusMap[row.status] || (row.status == 1 ? '正常' : '异常'), // 默认1为正常
+                '创建时间': createdAtStr,
+                '排课ID': row.id || '',
+                '教师ID': row.teacher_id || '',
+                '学生ID': row.student_id || '',
+                '备注': row.remark || row.notes || ''
+            };
+        });
+    }

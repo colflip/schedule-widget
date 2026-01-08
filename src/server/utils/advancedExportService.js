@@ -65,7 +65,9 @@ class AdvancedExportService {
             { key: 'student_id', header: '学生ID', width: 12 },
             { key: 'student_name', header: '学生名称', width: 15 },
             { key: 'date', header: '日期', width: 15 },
-            { key: 'time', header: '时间', width: 15 },
+            { key: 'time_range', header: '时间', width: 15 },
+            { key: 'start_time', header: 'start_time', width: 10 },
+            { key: 'end_time', header: 'end_time', width: 10 },
             { key: 'location', header: '地点', width: 20 },
             { key: 'type', header: '类型', width: 12 },
             { key: 'status', header: '状态', width: 12 },
@@ -79,7 +81,9 @@ class AdvancedExportService {
             { key: 'teacher_id', header: '教师ID', width: 12 },
             { key: 'teacher_name', header: '教师名称', width: 15 },
             { key: 'date', header: '日期', width: 15 },
-            { key: 'time', header: '时间', width: 15 },
+            { key: 'time_range', header: '时间', width: 15 },
+            { key: 'start_time', header: 'start_time', width: 10 },
+            { key: 'end_time', header: 'end_time', width: 10 },
             { key: 'location', header: '地点', width: 20 },
             { key: 'type', header: '类型', width: 12 },
             { key: 'status', header: '状态', width: 12 },
@@ -166,23 +170,23 @@ class AdvancedExportService {
                 AND column_name IN ('arr_date', 'class_date', 'date')
                 ORDER BY column_name DESC
             `);
-            
+
             const columns = (result.rows || []).map(r => r.column_name);
-            
+
             if (columns.length === 0) {
                 throw new Error('course_arrangement 表中找不到日期列');
             }
-            
+
             // 使用 COALESCE 或单列，优先级：arr_date > class_date > date
             if (columns.length === 1) {
                 return `ca.${columns[0]}`;
             }
-            
+
             const parts = [];
             ['arr_date', 'class_date', 'date'].forEach(col => {
                 if (columns.includes(col)) parts.push(`ca.${col}`);
             });
-            
+
             return parts.length > 1 ? `COALESCE(${parts.join(', ')})` : parts[0];
         } catch (error) {
             console.error('获取日期表达式失败:', error);
@@ -225,7 +229,7 @@ class AdvancedExportService {
         // 数据转换
         return rows.map(row => ({
             ...row,
-            completion_rate: row.total_schedules > 0 
+            completion_rate: row.total_schedules > 0
                 ? ((row.confirmed_schedules / row.total_schedules) * 100).toFixed(2) + '%'
                 : '0%',
             created_at: this.formatDateTime(row.created_at),
@@ -267,7 +271,7 @@ class AdvancedExportService {
         // 数据转换
         return rows.map(row => ({
             ...row,
-            participation_rate: row.total_schedules > 0 
+            participation_rate: row.total_schedules > 0
                 ? ((row.confirmed_schedules / row.total_schedules) * 100).toFixed(2) + '%'
                 : '0%',
             created_at: this.formatDateTime(row.created_at),
@@ -292,7 +296,9 @@ class AdvancedExportService {
                 s.id as student_id,
                 s.name as student_name,
                 ${dateExpr}::date as date,
-                TO_CHAR(${dateExpr}, 'HH24:MI') as time,
+                TO_CHAR(ca.start_time, 'HH24:MI') as start_time,
+                TO_CHAR(ca.end_time, 'HH24:MI') as end_time,
+                (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
                 ca.location,
                 st.name as type,
                 ca.status,
@@ -320,7 +326,9 @@ class AdvancedExportService {
             student_id: row.student_id,
             student_name: this.sanitizeValue(row.student_name),
             date: row.date,
-            time: row.time,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            time_range: row.time_range,
             location: this.sanitizeValue(row.location),
             type: this.sanitizeValue(row.type),
             status: row.status,
@@ -346,7 +354,9 @@ class AdvancedExportService {
                 t.id as teacher_id,
                 t.name as teacher_name,
                 ${dateExpr}::date as date,
-                TO_CHAR(${dateExpr}, 'HH24:MI') as time,
+                TO_CHAR(ca.start_time, 'HH24:MI') as start_time,
+                TO_CHAR(ca.end_time, 'HH24:MI') as end_time,
+                (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
                 ca.location,
                 st.name as type,
                 ca.status,
@@ -374,7 +384,9 @@ class AdvancedExportService {
             teacher_id: row.teacher_id,
             teacher_name: this.sanitizeValue(row.teacher_name),
             date: row.date,
-            time: row.time,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            time_range: row.time_range,
             location: this.sanitizeValue(row.location),
             type: this.sanitizeValue(row.type),
             status: row.status,

@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Round">
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/dashboard.css">
-    <link rel="stylesheet" href="/css/schedule-cards.css">
     <style>
         /* 全局样式 */
         :root {
@@ -1150,6 +1149,8 @@
                                                 <button type="button" class="preset-btn" data-preset="week">本周</button>
                                                 <button type="button" class="preset-btn" data-preset="month">本月</button>
                                                 <button type="button" class="preset-btn"
+                                                    data-preset="last-month">上月</button>
+                                                <button type="button" class="preset-btn"
                                                     data-preset="quarter">本季度</button>
                                             </div>
                                         </div>
@@ -1194,6 +1195,16 @@
                                                     style="font-size: 18px; margin-right: 4px;">search</span>
                                                 <span class="btn-text">查询</span>
                                             </button>
+                                            <div class="preset-buttons" data-target="teacher"
+                                                style="display:flex; gap:4px;">
+                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-month">上月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="quarter">本季度</button>
+                                            </div>
                                             <div class="filter-group"
                                                 style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
                                                 <label for="statsTeacherSelect"
@@ -1248,6 +1259,16 @@
                                                     style="font-size: 18px; margin-right: 4px;">search</span>
                                                 <span class="btn-text">查询</span>
                                             </button>
+                                            <div class="preset-buttons" data-target="student"
+                                                style="display:flex; gap:4px;">
+                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-month">上月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="quarter">本季度</button>
+                                            </div>
                                             <div class="filter-group"
                                                 style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
                                                 <label for="statsStudentSelect"
@@ -1293,6 +1314,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/js/admin-stats-plugins.js"></script>
     <script src="/js/date-range-utils.js"></script>
+    <script src="/js/schedule-types-store.js"></script>
     <script src="/js/i18n-utils.js"></script>
     <script src="/js/export-ui-manager.js"></script>
     <script src="/js/export-dialog.js"></script>

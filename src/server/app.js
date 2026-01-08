@@ -51,13 +51,5 @@ app.use(errorHandler);
 // 启动服务器
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-    console.log(`服务器运行在端口 ${PORT}`);
-
-    // 启动自动完成排课任务（每5分钟执行一次）
-    const runAutoComplete = require('./scripts/run-auto-complete-schedules');
-    setInterval(() => {
-        runAutoComplete().catch(err => console.error('Auto-complete task failed:', err));
-    }, 5 * 60 * 1000);
-    // 启动时立即执行一次
-    runAutoComplete().catch(err => console.error('Initial auto-complete task failed:', err));
+  console.log(`服务器运行在端口 ${PORT}`);
 });

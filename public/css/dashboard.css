@@ -252,7 +252,7 @@
     padding-bottom: calc(2vw + var(--bottom-nav-height));
     /* 预留底部固定菜单高度，避免遮挡 */
     background-color: #FFFFFF;
-    /* overflow-y: auto; Removed to fix mobile scroll bounce */
+    overflow-y: auto;
     transition: margin-left 0.3s ease;
     /* 修改过渡效果 */
     /* margin-left: 250px; 默认的左边距 */
@@ -5152,86 +5152,4 @@ svg {
         font-size: 22px;
         font-weight: 600;
     }
-}
-/* Action Sheet Styles */
-.action-sheet-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 9999;
-    display: none;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.action-sheet-overlay.visible {
-    display: block;
-    opacity: 1;
-}
-
-.action-sheet {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: #f8f9fa;
-    border-radius: 16px 16px 0 0;
-    transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-    padding-bottom: env(safe-area-inset-bottom);
-}
-
-.action-sheet-overlay.visible .action-sheet {
-    transform: translateY(0);
-}
-
-.action-sheet-header {
-    padding: 16px;
-    text-align: center;
-    font-size: 14px;
-    color: #64748b;
-    border-bottom: 1px solid #e2e8f0;
-}
-
-.action-sheet-options {
-    background: white;
-}
-
-.action-sheet-option {
-    width: 100%;
-    padding: 16px;
-    background: white;
-    border: none;
-    border-bottom: 1px solid #f1f5f9;
-    font-size: 16px;
-    color: #1e293b;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.action-sheet-option:active {
-    background-color: #f1f5f9;
-}
-
-.action-sheet-option.selected {
-    color: #2ECC71;
-    font-weight: 500;
-}
-
-.action-sheet-cancel {
-    margin-top: 8px;
-    padding: 16px;
-    background: white;
-    text-align: center;
-    font-size: 16px;
-    font-weight: 500;
-    color: #ef4444;
-    cursor: pointer;
-}
-
-.action-sheet-cancel:active {
-    background-color: #f1f5f9;
 }
