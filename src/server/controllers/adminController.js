@@ -1,3 +1,8 @@
+/**
+ * 管理员控制器
+ * @description 处理管理员端的用户管理、排课管理、统计和数据导出等操作
+ */
+
 const db = require('../db/db');
 const bcrypt = require('bcrypt');
 const { standardResponse } = require('../middleware/validation');
@@ -7,13 +12,17 @@ const AdvancedExportService = require('../utils/advancedExportService');
 const ExportLogService = require('../utils/exportLogService');
 
 const adminController = {
-    // 用户管理功能
+    /**
+     * 获取用户列表
+     * @description 根据用户类型返回对应的用户列表（管理员/教师/学生）
+     * @param {string} req.params.userType - 用户类型
+     */
     async getUsers(req, res) {
         try {
             const { userType } = req.params;
             let table;
             let selectColumns;
-            
+
             switch (userType) {
                 case 'admin':
                     table = 'administrators';
@@ -40,7 +49,7 @@ const adminController = {
                         selectColumns = selectColumns.replace('last_login, created_at', 'status, last_login, created_at');
                     }
                 }
-            } catch(_) {}
+            } catch (_) { }
 
             // 开发离线模式：返回示例数据以便预览UI
             if (process.env.OFFLINE_DEV === 'true') {
@@ -74,7 +83,12 @@ const adminController = {
         }
     },
 
-    // 获取单个用户详情（用于前端确认与冲突检测）
+    /**
+     * 获取单个用户详情
+     * @description 根据用户类型和ID返回用户详情
+     * @param {string} req.params.userType - 用户类型
+     * @param {string} req.params.id - 用户ID
+     */
     async getUserById(req, res) {
         try {
             const { userType, id } = req.params;
@@ -105,7 +119,7 @@ const adminController = {
                         selectColumns = selectColumns.replace('last_login, created_at', 'status, last_login, created_at');
                     }
                 }
-            } catch(_) {}
+            } catch (_) { }
 
             if (process.env.OFFLINE_DEV === 'true') {
                 const now = new Date();
@@ -129,7 +143,7 @@ const adminController = {
         try {
             const { userType, username, password, name, email, ...additionalInfo } = req.body;
             let table;
-            
+
             switch (userType) {
                 case 'admin':
                     table = 'administrators';
@@ -190,7 +204,7 @@ const adminController = {
                         delete filteredAdditional.status;
                     }
                 }
-            } catch(_) { /* 静默处理探测错误 */ }
+            } catch (_) { /* 静默处理探测错误 */ }
 
             // 检查用户名是否已存在
             const existingUser = await db.query(
@@ -239,7 +253,7 @@ const adminController = {
                 const result = await q(insertSql, values);
                 const rows = (result && result.rows) ? result.rows : (Array.isArray(result) ? result : []);
                 // 记录审计（在事务内）
-                try { await recordAudit(req, { op: 'create', entityType: userType, entityId: rows[0]?.id, details: { username, name, email } }); } catch(_) {}
+                try { await recordAudit(req, { op: 'create', entityType: userType, entityId: rows[0]?.id, details: { username, name, email } }); } catch (_) { }
 
                 res.status(201).json(standardResponse(true, rows[0], '创建用户成功'));
             });
@@ -254,7 +268,7 @@ const adminController = {
             const { userType, id } = req.params;
             const { username, name, email, ...additionalInfo } = req.body;
             let table;
-            
+
             switch (userType) {
                 case 'admin':
                     table = 'administrators';
@@ -313,7 +327,7 @@ const adminController = {
                         delete filteredAdditional.status;
                     }
                 }
-            } catch(_) { /* 静默处理探测错误 */ }
+            } catch (_) { /* 静默处理探测错误 */ }
 
             // 构建更新语句
             let updates = [];
@@ -367,7 +381,7 @@ const adminController = {
                     // 通过抛错让 runInTransaction 回滚
                     throw Object.assign(new Error('更新失败'), { statusCode: 500 });
                 }
-                try { await recordAudit(req, { op: 'update', entityType: userType, entityId: Number(id), details: { username, name, email, ...filteredAdditional } }); } catch(_) {}
+                try { await recordAudit(req, { op: 'update', entityType: userType, entityId: Number(id), details: { username, name, email, ...filteredAdditional } }); } catch (_) { }
                 res.json(standardResponse(true, rows[0], '更新用户成功'));
             });
         } catch (error) {
@@ -381,7 +395,7 @@ const adminController = {
             const { userType, id } = req.params;
             const cascade = (req.query && (req.query.cascade === 'true' || req.query.cascade === '1'));
             let table;
-            
+
             switch (userType) {
                 case 'admin':
                     table = 'administrators';
@@ -427,7 +441,7 @@ const adminController = {
                         const q = usePool ? db.query : client.query.bind(client);
                         await q(`DELETE FROM course_arrangement WHERE ${refCol} = $1`, [id]);
                         await q(`DELETE FROM ${table} WHERE id = $1`, [id]);
-                        try { await recordAudit(req, { op: 'delete_cascade', entityType: userType, entityId: Number(id), details: { deletedSchedules: refCount } }); } catch(_) {}
+                        try { await recordAudit(req, { op: 'delete_cascade', entityType: userType, entityId: Number(id), details: { deletedSchedules: refCount } }); } catch (_) { }
                         res.json(standardResponse(true, { deletedSchedules: refCount }, '用户及其关联排课已删除'));
                     });
                     return;
@@ -436,7 +450,7 @@ const adminController = {
 
             // 默认删除（管理员或无关联引用）
             await db.query(`DELETE FROM ${table} WHERE id = $1`, [id]);
-            try { await recordAudit(req, { op: 'delete', entityType: userType, entityId: Number(id) }); } catch(_) {}
+            try { await recordAudit(req, { op: 'delete', entityType: userType, entityId: Number(id) }); } catch (_) { }
             res.json(standardResponse(true, null, '用户删除成功'));
         } catch (error) {
             // 外键约束冲突：返回 409 并给出友好提示
@@ -448,7 +462,14 @@ const adminController = {
         }
     },
 
-    // 排课管理功能
+    /**
+     * 获取排课列表
+     * @description 根据日期范围和过滤条件返回排课列表
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     * @param {string} req.query.status - 状态过滤（可选）
+     * @param {string} req.query.type - 类型过滤（可选）
+     */
     async getSchedules(req, res) {
         try {
             let { startDate, endDate, status, type } = req.query;
@@ -485,7 +506,7 @@ const adminController = {
                 const sCols = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='students' AND column_name='status'`);
                 teacherHasStatus = (tCols.rows || []).length > 0;
                 studentHasStatus = (sCols.rows || []).length > 0;
-            } catch(_) {}
+            } catch (_) { }
 
             // 基础 SQL：关联教师与学生以便能够按账号状态过滤
             let sql = `
@@ -594,7 +615,7 @@ const adminController = {
                 const sCols = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='students' AND column_name='status'`);
                 teacherHasStatus = (tCols.rows || []).length > 0;
                 studentHasStatus = (sCols.rows || []).length > 0;
-            } catch(_) {}
+            } catch (_) { }
 
             let sql = `
                 SELECT 
@@ -711,44 +732,44 @@ const adminController = {
                     throw stErr;
                 }
 
-            // 适配新结构：每条 course_arrangement 代表一个学生的具体安排
-            const firstStudentId = Array.isArray(studentIds) ? studentIds[0] : studentIds;
-            const firstTypeId = Array.isArray(scheduleTypes) ? scheduleTypes[0] : scheduleTypes;
+                // 适配新结构：每条 course_arrangement 代表一个学生的具体安排
+                const firstStudentId = Array.isArray(studentIds) ? studentIds[0] : studentIds;
+                const firstTypeId = Array.isArray(scheduleTypes) ? scheduleTypes[0] : scheduleTypes;
 
-            // 兼容不同日期列存在性
-            const rCols = await db.query(`
+                // 兼容不同日期列存在性
+                const rCols = await db.query(`
               SELECT column_name FROM information_schema.columns
               WHERE table_schema='public' AND table_name='course_arrangement' AND column_name IN ('arr_date','class_date','date')
             `);
-            const cols = new Set((rCols.rows || []).map(x => x.column_name));
-            const dateCol = cols.has('arr_date') ? 'arr_date' : (cols.has('class_date') ? 'class_date' : 'date');
-            // 基础验证：时间格式与先后关系
-            function toMinutes(t) {
-                const m = /^([0-2]?\d):([0-5]\d)$/.exec(String(t || ''));
-                if (!m) return NaN;
-                return Number(m[1]) * 60 + Number(m[2]);
-            }
-            const sMin = toMinutes(startTime);
-            const eMin = toMinutes(endTime);
-            if (isNaN(sMin) || isNaN(eMin)) {
-                throw Object.assign(new Error('开始/结束时间格式不正确（HH:MM）'), { statusCode: 400, payload: { errors: [{ field: 'time', message: '开始/结束时间格式不正确（HH:MM）' }] } });
-            }
-            if (eMin <= sMin) {
-                throw Object.assign(new Error('结束时间必须晚于开始时间'), { statusCode: 400, payload: { errors: [{ field: 'time', message: '结束时间必须晚于开始时间' }] } });
-            }
+                const cols = new Set((rCols.rows || []).map(x => x.column_name));
+                const dateCol = cols.has('arr_date') ? 'arr_date' : (cols.has('class_date') ? 'class_date' : 'date');
+                // 基础验证：时间格式与先后关系
+                function toMinutes(t) {
+                    const m = /^([0-2]?\d):([0-5]\d)$/.exec(String(t || ''));
+                    if (!m) return NaN;
+                    return Number(m[1]) * 60 + Number(m[2]);
+                }
+                const sMin = toMinutes(startTime);
+                const eMin = toMinutes(endTime);
+                if (isNaN(sMin) || isNaN(eMin)) {
+                    throw Object.assign(new Error('开始/结束时间格式不正确（HH:MM）'), { statusCode: 400, payload: { errors: [{ field: 'time', message: '开始/结束时间格式不正确（HH:MM）' }] } });
+                }
+                if (eMin <= sMin) {
+                    throw Object.assign(new Error('结束时间必须晚于开始时间'), { statusCode: 400, payload: { errors: [{ field: 'time', message: '结束时间必须晚于开始时间' }] } });
+                }
 
-            // 允许完全重复：不进行重复检测（同一教师/学生/日期/时间段也允许保留多条）
+                // 允许完全重复：不进行重复检测（同一教师/学生/日期/时间段也允许保留多条）
 
-            // 冲突检测移除：允许教师同一时间段存在多条排课
-            const overlapPredicate = `NOT (end_time <= $3 OR start_time >= $4)`;
-            // 学生冲突（如提供）
-            // 学生重叠允许：不阻断创建，满足同一时间段同一学生可存在多条记录的需求
-            // 地点冲突移除：允许地点同一时间段存在多条排课
+                // 冲突检测移除：允许教师同一时间段存在多条排课
+                const overlapPredicate = `NOT (end_time <= $3 OR start_time >= $4)`;
+                // 学生冲突（如提供）
+                // 学生重叠允许：不阻断创建，满足同一时间段同一学生可存在多条记录的需求
+                // 地点冲突移除：允许地点同一时间段存在多条排课
 
-            // 按传入状态写入，默认 pending，且限制为四种合法状态
-            const allowedStatuses = new Set(['pending', 'confirmed', 'cancelled', 'completed']);
-            const nextStatus = allowedStatuses.has(String(status || '').trim()) ? String(status).trim() : 'pending';
-            const insertSql = `INSERT INTO course_arrangement (teacher_id, student_id, course_id, ${dateCol}, start_time, end_time, status, location, created_by)
+                // 按传入状态写入，默认 pending，且限制为四种合法状态
+                const allowedStatuses = new Set(['pending', 'confirmed', 'cancelled', 'completed']);
+                const nextStatus = allowedStatuses.has(String(status || '').trim()) ? String(status).trim() : 'pending';
+                const insertSql = `INSERT INTO course_arrangement (teacher_id, student_id, course_id, ${dateCol}, start_time, end_time, status, location, created_by)
                                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                                RETURNING id`;
                 const insertResult = await q(
@@ -780,9 +801,9 @@ const adminController = {
                 const payload = error.payload || {};
                 return res.status(status).json(Object.assign({ message: error.message }, payload));
             }
-            return res.status(500).json({ 
-                message: '服务器错误', 
-                code: error.code || 'UNKNOWN_ERROR', 
+            return res.status(500).json({
+                message: '服务器错误',
+                code: error.code || 'UNKNOWN_ERROR',
                 errors: [{ field: 'db', message: error.message || '数据库错误' }]
             });
         }
@@ -947,15 +968,18 @@ const adminController = {
             res.json({ message: '课程确认状态更新成功' });
         } catch (error) {
             console.error('确认课程错误:', error);
-            res.status(500).json({ 
-                message: '服务器错误', 
-                code: error.code || 'UNKNOWN_ERROR', 
+            res.status(500).json({
+                message: '服务器错误',
+                code: error.code || 'UNKNOWN_ERROR',
                 errors: [{ field: 'db', message: error.message || '数据库错误' }]
             });
         }
     },
 
-    // 统计功能
+    /**
+     * 获取总览统计
+     * @description 返回系统总览数据：教师/学生数量、排课统计等
+     */
     async getOverviewStats(req, res) {
         try {
             async function getCaDateExpr() {
@@ -995,7 +1019,7 @@ const adminController = {
                     (SELECT COUNT(*) FROM course_arrangement WHERE status = 'pending') as pending_count,
                     (SELECT COUNT(*) FROM course_arrangement) as total_schedules
             `);
-            
+
             // 兼容不同驱动返回值形态（对象含 rows 或直接数组）
             const rows = (stats && stats.rows) ? stats.rows : (Array.isArray(stats) ? stats : []);
             // 如果查询结果为空，返回默认值
@@ -1044,7 +1068,7 @@ const adminController = {
                 const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
                 startDate = firstDay.toISOString().split('T')[0];
             }
-            
+
             if (!endDate || endDate === '') {
                 const now = new Date();
                 const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -1053,16 +1077,16 @@ const adminController = {
 
             // 获取排课统计数据
             const dateExpr = await (async () => {
-              const r = await db.query(`
+                const r = await db.query(`
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema='public' AND table_name='course_arrangement' AND column_name IN ('arr_date','class_date','date')
               `);
-              const cols = new Set((r.rows || []).map(x => x.column_name));
-              const parts = [];
-              if (cols.has('arr_date')) parts.push('ca.arr_date');
-              if (cols.has('class_date')) parts.push('ca.class_date');
-              if (cols.has('date')) parts.push('ca.date');
-              return parts.length > 1 ? `COALESCE(${parts.join(', ')})` : (parts[0] || 'CURRENT_DATE');
+                const cols = new Set((r.rows || []).map(x => x.column_name));
+                const parts = [];
+                if (cols.has('arr_date')) parts.push('ca.arr_date');
+                if (cols.has('class_date')) parts.push('ca.class_date');
+                if (cols.has('date')) parts.push('ca.date');
+                return parts.length > 1 ? `COALESCE(${parts.join(', ')})` : (parts[0] || 'CURRENT_DATE');
             })();
 
             const query = `
@@ -1101,7 +1125,7 @@ const adminController = {
                 const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
                 startDate = firstDay.toISOString().split('T')[0];
             }
-            
+
             if (!endDate || endDate === '') {
                 const now = new Date();
                 const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -1110,16 +1134,16 @@ const adminController = {
 
             // 获取用户统计数据
             const dateExpr2 = await (async () => {
-              const r = await db.query(`
+                const r = await db.query(`
                 SELECT column_name FROM information_schema.columns
                 WHERE table_schema='public' AND table_name='course_arrangement' AND column_name IN ('arr_date','class_date','date')
               `);
-              const cols = new Set((r.rows || []).map(x => x.column_name));
-              const parts = [];
-              if (cols.has('arr_date')) parts.push('ca.arr_date');
-              if (cols.has('class_date')) parts.push('ca.class_date');
-              if (cols.has('date')) parts.push('ca.date');
-              return parts.length > 1 ? `COALESCE(${parts.join(', ')})` : (parts[0] || 'CURRENT_DATE');
+                const cols = new Set((r.rows || []).map(x => x.column_name));
+                const parts = [];
+                if (cols.has('arr_date')) parts.push('ca.arr_date');
+                if (cols.has('class_date')) parts.push('ca.class_date');
+                if (cols.has('date')) parts.push('ca.date');
+                return parts.length > 1 ? `COALESCE(${parts.join(', ')})` : (parts[0] || 'CURRENT_DATE');
             })();
 
             const teacherStats = await db.query(`
@@ -1160,14 +1184,14 @@ const adminController = {
     async exportTeacherData(req, res) {
         try {
             const { startDate, endDate, preset } = req.query;
-            
+
             try {
                 // 计算实际日期范围
                 const { actualStartDate, actualEndDate } = ExportUtils.calculateDateRange(startDate, endDate, preset);
-                
+
                 // 验证日期范围有效性
                 ExportUtils.validateDateRange(actualStartDate, actualEndDate);
-                
+
                 // 获取日期表达式
                 const dateExpr = await ExportUtils.getDateExpression();
 
@@ -1181,7 +1205,7 @@ const adminController = {
                 `, [ExportUtils.formatDateToISO(actualStartDate), ExportUtils.formatDateToISO(actualEndDate)]);
 
                 const totalRecords = countResult.rows ? countResult.rows.length : 0;
-                
+
                 // 验证数据量
                 ExportUtils.validateDataSize(totalRecords);
 
@@ -1243,14 +1267,14 @@ const adminController = {
     async exportStudentData(req, res) {
         try {
             const { startDate, endDate, preset } = req.query;
-            
+
             try {
                 // 计算实际日期范围
                 const { actualStartDate, actualEndDate } = ExportUtils.calculateDateRange(startDate, endDate, preset);
-                
+
                 // 验证日期范围有效性
                 ExportUtils.validateDateRange(actualStartDate, actualEndDate);
-                
+
                 // 获取日期表达式
                 const dateExpr = await ExportUtils.getDateExpression();
 
@@ -1264,7 +1288,7 @@ const adminController = {
                 `, [ExportUtils.formatDateToISO(actualStartDate), ExportUtils.formatDateToISO(actualEndDate)]);
 
                 const totalRecords = countResult.rows ? countResult.rows.length : 0;
-                
+
                 // 验证数据量
                 ExportUtils.validateDataSize(totalRecords);
 

@@ -167,11 +167,14 @@ function renderMobileScheduleTable(weekDates, grouped) {
             const empty = createElement('div', 'no-schedule', { textContent: '暂无排课' });
             detailsCell.appendChild(empty);
         } else {
-            dailySchedules.forEach((schedule, index) => {
-                const detail = buildMobileScheduleDetail(schedule);
+            // 聚合课程
+            const aggregatedGroups = groupSchedulesByTimeAndLocation(dailySchedules);
+
+            aggregatedGroups.forEach((group, index) => {
+                const detail = buildAggregatedScheduleCard(group, true); // true for mobile style adjustments if needed
                 detailsCell.appendChild(detail);
                 // 添加分隔线（除了最后一个）
-                if (index < dailySchedules.length - 1) {
+                if (index < aggregatedGroups.length - 1) {
                     const divider = createElement('hr', 'schedule-divider');
                     divider.style.cssText = 'margin: 8px 0; border: none; border-top: 1px solid #e9ecef;';
                     detailsCell.appendChild(divider);
@@ -309,8 +312,11 @@ function renderBody(weekDates, grouped) {
             const empty = createElement('div', 'no-schedule', { textContent: '暂无排课' });
             cell.appendChild(empty);
         } else {
-            dailySchedules.forEach(schedule => {
-                cell.appendChild(buildScheduleCard(schedule));
+            // 聚合课程：按时间+地点分组
+            const aggregatedGroups = groupSchedulesByTimeAndLocation(dailySchedules);
+
+            aggregatedGroups.forEach(group => {
+                cell.appendChild(buildAggregatedScheduleCard(group));
             });
         }
         row.appendChild(cell);
@@ -318,77 +324,127 @@ function renderBody(weekDates, grouped) {
     tbody.appendChild(row);
 }
 
-function buildScheduleCard(schedule) {
-    const status = (schedule.status || 'pending').toLowerCase();
-    const displayStatus = getDisplayStatus(schedule);
-    const slotId = getTimeSlotId(schedule.start_time);
-
-    // Use Admin-like structure: group-picker-item
-    const card = createElement('div', `group-picker-item slot-${slotId} status-${status} schedule-card`);
-    card.dataset.scheduleId = schedule.id;
-
-    // 1. Teacher Name
-    const teacherSpan = createElement('span', 'teacher-name', {
-        textContent: schedule.teacher_name || '未分配教师'
+// 按时间+地点分组
+function groupSchedulesByTimeAndLocation(schedules) {
+    const groups = new Map();
+    schedules.forEach(schedule => {
+        // Key: start_time|end_time|location
+        // 允许 location 为 null/undefined，视为 ""
+        const loc = (schedule.location || '').trim();
+        const key = `${schedule.start_time}|${schedule.end_time}|${loc}`;
+        if (!groups.has(key)) {
+            groups.set(key, []);
+        }
+        groups.get(key).push(schedule);
     });
-    card.appendChild(teacherSpan);
+    return Array.from(groups.values());
+}
 
-    // 2. Type Chip
-    const typeCode = schedule.schedule_type || '';
-    const typeLabel = schedule.schedule_type_cn || SCHEDULE_TYPE_MAP[typeCode] || typeCode || '课程';
-    let typeClass = 'type-default';
-    // Map type label to class (simplified logic based on Admin CSS)
-    if (typeLabel.includes('入户')) typeClass = 'type-visit';
-    else if (typeLabel.includes('试教')) typeClass = 'type-trial';
-    else if (typeLabel.includes('评审')) typeClass = 'type-review';
-    else if (typeLabel.includes('半次')) typeClass = 'type-half-visit';
-    else if (typeLabel.includes('集体')) typeClass = 'type-group-activity';
+// 构建聚合课程卡片
+function buildAggregatedScheduleCard(group, isMobile = false) {
+    if (!group || group.length === 0) return null;
+    const first = group[0];
+    const slotId = getTimeSlotId(first.start_time);
 
-    const typeChip = createElement('span', `chip ${typeClass}`, {
-        textContent: typeLabel
+    // 状态判定：如果全部一致则使用该状态，否则 mixed
+    const allSameStatus = group.every(s => s.status === first.status);
+    const cardStatus = allSameStatus ? (first.status || 'pending').toLowerCase() : 'mixed';
+
+    // 创建卡片容器
+    const card = createElement('div', `group-picker-item slot-${slotId} status-${cardStatus} schedule-card`);
+    // 自定义样式以匹配聚合视图
+    card.style.cssText = 'display: flex; flex-direction: column; gap: 8px; padding: 10px; align-items: stretch; height: auto;';
+    if (isMobile) {
+        card.style.border = '1px solid #eee'; // 移动端稍微增加区分
+    }
+
+    // 1. 列表区域（包含多位老师/状态）
+    const listContainer = createElement('div', 'schedule-list');
+    listContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+
+    group.forEach(schedule => {
+        const itemRow = createElement('div', 'schedule-list-item');
+        // 移动端要求：对应Mobile居中显示，不要贴边
+        const justifyContent = isMobile ? 'center' : 'space-between';
+        // Mobile使用 gap: 12px 确保不过于拥挤，同时 padding 确保不贴边
+        const mobileStyle = isMobile ? 'padding: 0 10%; gap: 12px;' : 'gap: 4px;';
+        itemRow.style.cssText = `display: flex; align-items: center; justify-content: ${justifyContent}; font-size: 13px; flex-wrap: wrap; ${mobileStyle}`;
+
+        // 左侧：教师与类型 (移动端改为居中，不分左右)
+        const leftParams = createElement('div', '', { style: 'display: flex; align-items: center; gap: 4px;' });
+
+        const teacherSpan = createElement('span', 'teacher-name', { textContent: schedule.teacher_name || '未分配' });
+        teacherSpan.style.fontWeight = '500';
+        leftParams.appendChild(teacherSpan);
+
+        // 获取中文课程类型：优先 schedule_type_cn，其次映射表，最后原值
+        const rawType = schedule.schedule_type || '';
+        const typeLabel = schedule.schedule_type_cn || SCHEDULE_TYPE_MAP[rawType] || rawType || '课程';
+
+        const typeSpan = createElement('span', 'type-text', { textContent: `(${typeLabel})` });
+        typeSpan.style.color = '#666';
+        typeSpan.style.fontSize = '12px';
+        leftParams.appendChild(typeSpan);
+
+        itemRow.appendChild(leftParams);
+
+        // 右侧：状态与操作
+        const rightParams = createElement('div', '', { style: 'display: flex; align-items: center; gap: 4px;' });
+
+        const status = (schedule.status || 'pending').toLowerCase();
+        const displayStatus = getDisplayStatus(schedule);
+
+        /* 状态样式逻辑简化 */
+        let statusColor = '#666';
+        let statusBg = '#f0f0f0';
+        if (status === 'confirmed') { statusColor = '#155724'; statusBg = '#d4edda'; }
+        else if (status === 'pending') { statusColor = '#856404'; statusBg = '#fff3cd'; }
+        else if (status === 'completed') { statusColor = '#1b1e21'; statusBg = '#d6d8d9'; }
+
+        const statusBadge = createElement('span', `status-badge`, { textContent: displayStatus });
+        statusBadge.style.cssText = `padding: 2px 6px; border-radius: 4px; font-size: 11px; background-color: ${statusBg}; color: ${statusColor};`;
+        rightParams.appendChild(statusBadge);
+
+        // 确认按钮
+        if (status === 'pending') {
+            const confirmBtn = createElement('button', 'btn small-btn primary-btn', { textContent: '确认' });
+            confirmBtn.style.cssText = 'padding: 2px 8px; font-size: 11px; margin-left: 4px; cursor: pointer; border:none; border-radius:3px; background-color:#28a745; color:white;';
+            confirmBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleConfirmSchedule(schedule.id);
+            });
+            rightParams.appendChild(confirmBtn);
+        }
+
+        itemRow.appendChild(rightParams);
+        listContainer.appendChild(itemRow);
     });
-    card.appendChild(typeChip);
 
-    // 3. Status Chip
-    const statusChip = createElement('span', `chip status-${status}`, {
-        textContent: displayStatus
-    });
-    card.appendChild(statusChip);
+    card.appendChild(listContainer);
 
-    // 4. Time
-    const timeSpan = createElement('span', 'time-text', {
-        textContent: ` ${formatTimeRange(schedule.start_time, schedule.end_time)}`
-    });
-    card.appendChild(timeSpan);
+    // 分隔线
+    const hr = createElement('div');
+    hr.style.cssText = 'height: 1px; background-color: #eee; margin: 4px 0;';
+    card.appendChild(hr);
 
-    // 5. Location
-    const locationText = schedule.location || '上课地点未确定';
-    const locSpan = createElement('span', 'location-text', {
-        textContent: ` ${locationText}`
-    });
-    if (!schedule.location) {
-        locSpan.style.color = '#9ca3af'; // Muted color for empty state
+    // 2. 底部（时间地点）
+    const footer = createElement('div', 'schedule-footer');
+    footer.style.cssText = 'font-size: 12px; color: #555; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center;';
+
+    const timeText = formatTimeRange(first.start_time, first.end_time);
+    const timeSpan = createElement('div', '', { textContent: timeText });
+    timeSpan.style.fontWeight = '500';
+    footer.appendChild(timeSpan);
+
+    const locText = first.location || '上课地点未确定';
+    const locSpan = createElement('div', '', { textContent: locText });
+    if (!first.location) {
+        locSpan.style.color = '#999';
         locSpan.style.fontStyle = 'italic';
     }
-    card.appendChild(locSpan);
+    footer.appendChild(locSpan);
 
-    // Action Button (Confirm) - appended at the end if needed, or overlay?
-    // Admin uses a separate popup for actions. Here we need it inline.
-    // We can append it as a child, but group-picker-item is flex row (usually).
-    // Actually group-picker-item in Admin is `display: flex; align-items: center; gap: 8px;`
-    // So appending a button at the end works fine.
-
-    if (status === 'pending') {
-        const confirmBtn = createElement('button', 'btn small-btn primary-btn', {
-            textContent: '确认'
-        });
-        confirmBtn.style.cssText = 'padding: 2px 8px; font-size: 12px; border-radius: 4px; margin-left: auto;';
-        confirmBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            handleConfirmSchedule(schedule.id);
-        });
-        card.appendChild(confirmBtn);
-    }
+    card.appendChild(footer);
 
     return card;
 }

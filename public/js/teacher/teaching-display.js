@@ -56,6 +56,58 @@ function formatDate(date) {
 }
 
 /**
+ * Apply date preset
+ */
+function applyDatePreset(type) {
+    const now = new Date();
+    let start, end;
+
+    switch (type) {
+        case 'last-week': {
+            // Find last week's Monday
+            const dayOfWeek = now.getDay() || 7; // 1 (Mon) - 7 (Sun)
+            const daysToLastMonday = dayOfWeek + 6;
+            start = new Date(now);
+            start.setDate(now.getDate() - daysToLastMonday);
+            end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            break;
+        }
+        case 'last-month': {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            end = new Date(now.getFullYear(), now.getMonth(), 0);
+            break;
+        }
+        case 'last-quarter': {
+            const currentQuarter = Math.floor(now.getMonth() / 3);
+            let targetQuarter = currentQuarter - 1;
+            let targetYear = now.getFullYear();
+
+            if (targetQuarter < 0) {
+                targetQuarter = 3;
+                targetYear -= 1;
+            }
+
+            start = new Date(targetYear, targetQuarter * 3, 1);
+            end = new Date(targetYear, (targetQuarter + 1) * 3, 0);
+            break;
+        }
+        case 'last-year': {
+            start = new Date(now.getFullYear() - 1, 0, 1);
+            end = new Date(now.getFullYear() - 1, 11, 31);
+            break;
+        }
+    }
+
+    if (start && end) {
+        const startDateInput = document.getElementById('teachingStartDate');
+        const endDateInput = document.getElementById('teachingEndDate');
+        if (startDateInput) startDateInput.value = formatDate(start);
+        if (endDateInput) endDateInput.value = formatDate(end);
+    }
+}
+
+/**
  * Setup event listeners for buttons
  */
 function setupEventListeners() {
@@ -78,10 +130,162 @@ function setupEventListeners() {
         });
     }
 
+    // Quick Query Buttons Logic (Delegation or Nodelist)
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            // UI Feedback
+            presetBtns.forEach(b => {
+                b.style.backgroundColor = 'white';
+                b.style.color = '#333';
+            });
+            e.target.style.backgroundColor = '#dcfce7';
+            e.target.style.color = '#15803d';
+
+            const range = e.target.dataset.range;
+            const today = new Date();
+            let start = new Date();
+            let end = new Date(); // End is always today
+
+            switch (range) {
+                case 'prev_week':
+                    // 上周 (Last full week: Monday to Sunday)
+                    const day = today.getDay();
+                    const diffToMon = today.getDate() - day + (day === 0 ? -6 : 1);
+                    const lastSun = new Date(today);
+                    lastSun.setDate(diffToMon - 1);
+                    const lastMon = new Date(today);
+                    lastMon.setDate(diffToMon - 7);
+                    start = lastMon;
+                    end = lastSun;
+                    break;
+                case 'prev_month':
+                    // 上月 (Last full Month)
+                    start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    end = new Date(today.getFullYear(), today.getMonth(), 0);
+                    break;
+                case 'prev_quarter':
+                    // 上季度 (Last full Quarter)
+                    const currentQuarter = Math.floor((today.getMonth() + 3) / 3);
+                    const lastQuarter = currentQuarter - 1;
+                    if (lastQuarter === 0) { // Was Q1, so now Q4 of last year
+                        start = new Date(today.getFullYear() - 1, 9, 1);
+                        end = new Date(today.getFullYear() - 1, 12, 0);
+                    } else {
+                        start = new Date(today.getFullYear(), (lastQuarter - 1) * 3, 1);
+                        end = new Date(today.getFullYear(), lastQuarter * 3, 0);
+                    }
+                    break;
+                case 'prev_year':
+                    // 去年 (Last full Year)
+                    start = new Date(today.getFullYear() - 1, 0, 1);
+                    end = new Date(today.getFullYear() - 1, 11, 31);
+                    break;
+            }
+
+            // Set inputs
+            const startDateInput = document.getElementById('teachingStartDate');
+            const endDateInput = document.getElementById('teachingEndDate');
+
+            if (startDateInput && endDateInput) {
+                // Ensure date objects are valid before formatting
+                if (!isNaN(start) && !isNaN(end)) {
+                    startDateInput.value = formatDate(start);
+                    endDateInput.value = formatDate(end);
+
+                    // Trigger Query
+                    if (queryBtn) queryBtn.click();
+                }
+            }
+        });
+    });
+
     const exportBtn = document.getElementById('teachingExportBtn');
     if (exportBtn) {
-        exportBtn.addEventListener('click', exportTeachingData);
+        exportBtn.addEventListener('click', async () => {
+            const startDate = document.getElementById('teachingStartDate')?.value;
+            const endDate = document.getElementById('teachingEndDate')?.value;
+
+            if (!startDate || !endDate) {
+                alert('请先选择日期范围');
+                return;
+            }
+
+            const originalText = exportBtn.innerHTML;
+            exportBtn.innerHTML = '导出中...';
+            exportBtn.disabled = true;
+
+            try {
+                const response = await fetch(`/api/teacher/export?startDate=${startDate}&endDate=${endDate}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}` // Ensure token is passed if needed, though cookie usually handles it. 
+                        // If token is in header:
+                        // 'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorJson = await response.json().catch(() => ({}));
+                    throw new Error(errorJson.message || errorJson.error || '导出失败');
+                }
+
+                // Get filename from header or default
+                const disposition = response.headers.get('Content-Disposition');
+                let filename = 'export.xlsx';
+                if (disposition && disposition.indexOf('attachment') !== -1) {
+                    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+                    if (matches != null && matches[1]) {
+                        filename = decodeURIComponent(matches[1].replace(/['"]/g, ''));
+                    }
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+            } catch (error) {
+                console.error('Export failed:', error);
+                alert('导出失败: ' + error.message);
+            } finally {
+                exportBtn.innerHTML = originalText;
+                exportBtn.disabled = false;
+            }
+        });
     }
+
+    // Preset Buttons Logic
+    const presets = [
+        { id: 'btnLastWeek', type: 'last-week' },
+        { id: 'btnLastMonth', type: 'last-month' },
+        { id: 'btnLastQuarter', type: 'last-quarter' },
+        { id: 'btnLastYear', type: 'last-year' }
+    ];
+    presets.forEach(preset => {
+        const btn = document.getElementById(preset.id);
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                // Reset all buttons to default color
+                presets.forEach(p => {
+                    const b = document.getElementById(p.id);
+                    if (b) b.style.backgroundColor = '#64748b'; // Default slate color
+                });
+                // Set active button to green
+                btn.style.backgroundColor = '#10b981'; // Green for active state
+
+                applyDatePreset(preset.type);
+                // Trigger query
+                const queryBtn = document.getElementById('teachingQueryBtn');
+                if (queryBtn) queryBtn.click();
+            });
+        }
+    });
 }
 
 /**

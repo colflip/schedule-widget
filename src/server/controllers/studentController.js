@@ -1,6 +1,16 @@
+/**
+ * 学生端控制器
+ * @description 处理学生端的个人信息、时间安排、课程管理等操作
+ */
+
 const db = require('../db/db');
 
-// 动态构建 course_arrangement 日期表达式（兼容 arr_date/class_date/date 缺失场景）
+/**
+ * 动态构建 course_arrangement 日期表达式
+ * @description 兼容 arr_date/class_date/date 缺失场景，带缓存
+ * @param {string} alias - 表别名
+ * @returns {Promise<string>} SQL日期表达式
+ */
 const __dateExprCache = {};
 async function getDateExpr(alias) {
     const key = `expr_${alias || ''}`;
@@ -22,7 +32,10 @@ async function getDateExpr(alias) {
 }
 
 const studentController = {
-    // 获取个人信息
+    /**
+     * 获取个人信息
+     * @description 返回当前登录学生的基本信息
+     */
     async getProfile(req, res) {
         try {
             // 动态选择是否返回 status 字段
@@ -49,7 +62,10 @@ const studentController = {
         }
     },
 
-    // 更新个人信息
+    /**
+     * 更新个人信息
+     * @description 更新学生的姓名、专业、联系方式等基本信息
+     */
     async updateProfile(req, res) {
         try {
             const { name, profession, contact, visit_location, home_address, status } = req.body;
@@ -84,7 +100,12 @@ const studentController = {
         }
     },
 
-    // 获取时间安排
+    /**
+     * 获取时间安排
+     * @description 获取指定日期范围内的日常时间安排
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getAvailability(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -117,31 +138,62 @@ const studentController = {
         }
     },
 
+    // 导出学习记录
+    /**
+     * 导出学习记录为Excel文件
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     */
+    async exportMySchedules(req, res) {
+        try {
+            const studentId = req.user.id;
+            const { startDate, endDate } = req.query;
+
+            // 1. 实例化独立导出服务
+            const studentExportService = require('../utils/studentExportService');
+
+            // 2. 生成文件
+            const result = await studentExportService.exportSchedule(studentId, startDate, endDate);
+
+            // 3. 发送文件
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+            // Use simple URI encoding for compatibility
+            const encodedFilename = encodeURIComponent(result.filename);
+            res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"`);
+
+            res.setHeader('Content-Length', result.buffer.length);
+            res.end(result.buffer);
+
+        } catch (error) {
+            console.error('Export error:', error);
+            res.status(error.status || 500).json({ error: error.message || '导出失败' });
+        }
+    },
+
     // 设置时间安排
+    /**
+     * 批量设置或更新学生的每日时间安排
+     * @param {Object} req - Express request object
+     * @param {Object} res - Express response object
+     */
     async setAvailability(req, res) {
         try {
             const { availabilityList } = req.body;
-            const studentId = req.user.id; // 提前保存 user ID，防止在事务中丢失
-
-            console.log(`[setAvailability] 收到时间安排保存请求，学生ID: ${studentId}`);
-            console.log(`[setAvailability] 请求包含 ${availabilityList?.length} 条时间安排记录`);
+            const studentId = req.user.id;
 
             if (!Array.isArray(availabilityList)) {
-                console.error('[setAvailability] 无效的数据格式: availabilityList 不是数组');
                 return res.status(400).json({ message: '无效的数据格式' });
             }
 
             let updateCount = 0;
             let insertCount = 0;
 
-            // 重要：在事务工作函数中不应该调用 res.json()
-            // 应该先完成数据库操作，然后在事务外返回响应
             await db.runInTransaction(async (client, usePool) => {
                 const q = usePool ? db.query : client.query.bind(client);
 
                 for (const item of availabilityList) {
-                    console.log(`[setAvailability] 处理记录: 日期=${item.date}, 时间段=${item.timeSlot}, isAvailable=${item.isAvailable}`);
-
                     const slotToCol = (slot) => {
                         switch (slot) {
                             case 'morning': return 'morning_available';
@@ -151,22 +203,16 @@ const studentController = {
                         }
                     };
                     const col = slotToCol(item.timeSlot);
-                    if (!col) {
-                        console.warn(`[setAvailability] 未知的时间段: ${item.timeSlot}，跳过`);
-                        continue;
-                    }
+                    if (!col) continue;
 
                     const val = item.isAvailable === false ? 0 : 1;
 
                     const updateSql = `UPDATE student_daily_availability SET ${col} = $3, updated_at = CURRENT_TIMESTAMP WHERE student_id = $1 AND date = $2`;
-                    console.log(`[setAvailability] 执行UPDATE: ${updateSql.substring(0, 80)}...`, { student_id: studentId, date: item.date, col, val });
 
                     const upd = await q(
                         updateSql,
                         [studentId, item.date, val]
                     );
-
-                    console.log(`[setAvailability] 已更新记录: ${item.date} (${col}=${val}), 影响行数: ${upd?.rowCount}`);
 
                     if (!upd || upd.rowCount === 0) {
                         const morning = (col === 'morning_available') ? val : 0;
@@ -175,13 +221,8 @@ const studentController = {
 
                         const insertSql = `INSERT INTO student_daily_availability (student_id, date, morning_available, afternoon_available, evening_available, created_at)
                              VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`;
-                        console.log(`[setAvailability] 执行INSERT:`, { student_id: studentId, date: item.date, morning: morning, afternoon: afternoon, evening: evening });
 
-                        const ins = await q(
-                            insertSql,
-                            [studentId, item.date, morning, afternoon, evening]
-                        );
-                        console.log(`[setAvailability] INSERT完成, 影响行数: ${ins?.rowCount}`);
+                        await q(insertSql, [studentId, item.date, morning, afternoon, evening]);
                         insertCount++;
                     } else {
                         updateCount++;
@@ -189,17 +230,20 @@ const studentController = {
                 }
             });
 
-            // 事务完成后再返回响应
-            console.log(`[setAvailability] 事务完成: updateCount=${updateCount}, insertCount=${insertCount}`);
             res.json({ message: '时间安排更新成功', updateCount, insertCount });
         } catch (error) {
             console.error('[setAvailability] 错误:', error);
-            console.error('[setAvailability] 错误堆栈:', error.stack);
             res.status(500).json({ message: '服务器错误', error: error.message });
         }
     },
 
-    // 删除时间安排
+    /**
+     * 删除/清除时间安排
+     * @description 将指定时段的可用状态设置为不可用
+     * @param {Object} req.body.startDate - 开始日期
+     * @param {Object} req.body.endDate - 结束日期
+     * @param {Array} req.body.timeSlots - 时段列表
+     */
     async deleteAvailability(req, res) {
         try {
             const { startDate, endDate, timeSlots, ranges } = req.body;
@@ -249,7 +293,13 @@ const studentController = {
         }
     },
 
-    // 获取课程安排
+    /**
+     * 获取课程安排
+     * @description 获取学生在指定日期范围的课程安排
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     * @param {string} req.query.status - 课程状态过滤（可选）
+     */
     async getSchedules(req, res) {
         try {
             const { startDate, endDate, status } = req.query;
@@ -260,6 +310,7 @@ const studentController = {
                     ca.id,
                     ${dateExpr} AS date,
                     ca.start_time, ca.end_time, ca.status,
+                    ca.location,
                     ca.teacher_id, t.name as teacher_name,
                     sty.name as schedule_type
                 FROM course_arrangement ca
@@ -297,7 +348,12 @@ const studentController = {
         }
     },
 
-    // 获取统计数据
+    /**
+     * 获取统计数据
+     * @description 获取学生的课程类型统计和月度课程统计
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getStatistics(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -339,7 +395,10 @@ const studentController = {
         }
     },
 
-    // 获取总览数据
+    /**
+     * 获取总览数据
+     * @description 获取学生仪表盘总览数据，包括本月课程数、待上课数、已完成课数、今日课程
+     */
     async getOverview(req, res) {
         try {
             const today = new Date();
@@ -404,7 +463,12 @@ const studentController = {
         }
     },
 
-    // 获取数据汇总
+    /**
+     * 获取数据汇总
+     * @description 获取指定日期范围的详细排课记录
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getDataSummary(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -434,7 +498,11 @@ const studentController = {
         }
     },
 
-    // 确认课程
+    /**
+     * 确认课程
+     * @description 学生确认指定课程，更新状态为已确认
+     * @param {string} req.params.id - 课程ID
+     */
     async confirmSchedule(req, res) {
         try {
             const scheduleId = req.params.id;
@@ -462,7 +530,12 @@ const studentController = {
         }
     },
 
-    // 修改密码
+    /**
+     * 修改密码
+     * @description 学生修改登录密码
+     * @param {string} req.body.currentPassword - 当前密码
+     * @param {string} req.body.newPassword - 新密码
+     */
     async changePassword(req, res) {
         try {
             const bcrypt = require('bcrypt');
@@ -530,7 +603,8 @@ const studentController = {
             console.error('修改密码错误:', error);
             res.status(500).json({ message: '服务器错误' });
         }
-    }
+    },
+
 };
 
 module.exports = studentController;

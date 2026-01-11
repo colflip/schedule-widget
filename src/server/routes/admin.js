@@ -1,3 +1,9 @@
+/**
+ * 管理员路由
+ * @description 管理员端API路由配置，包括用户管理、排课管理、统计和数据导出
+ * @module routes/admin
+ */
+
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, adminOnly } = require('../middleware/auth');

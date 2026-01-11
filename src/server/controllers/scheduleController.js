@@ -1,6 +1,15 @@
+/**
+ * 排课管理控制器
+ * @description 处理排课相关操作：可用教师/学生查询、冲突检测、课程创建等
+ */
+
 const db = require('../db/db');
 
-// 动态识别 course_arrangement 表中的日期列，避免引用不存在的列
+/**
+ * 动态识别 course_arrangement 表中的日期列
+ * @description 避免引用不存在的列，带缓存
+ * @returns {Promise<string>} SQL日期表达式
+ */
 let caDateExprCache = null;
 async function getCaDateExpr() {
     if (caDateExprCache) return caDateExprCache;
@@ -25,7 +34,14 @@ async function getCaDateExpr() {
 }
 
 const scheduleController = {
-    // 获取可用教师
+    /**
+     * 获取可用教师
+     * @description 查询指定日期和时间段内可用的教师列表
+     * @param {string} req.query.date - 日期
+     * @param {string} req.query.timeSlot - 时段（morning/afternoon/evening）
+     * @param {string} req.query.startTime - 开始时间（可选）
+     * @param {string} req.query.endTime - 结束时间（可选）
+     */
     async getAvailableTeachers(req, res) {
         try {
             const { date, timeSlot, startTime, endTime } = req.query;
@@ -75,7 +91,14 @@ const scheduleController = {
         }
     },
 
-    // 获取可用学生
+    /**
+     * 获取可用学生
+     * @description 查询指定日期和时间段内可用的学生列表
+     * @param {string} req.query.date - 日期
+     * @param {string} req.query.timeSlot - 时段（morning/afternoon/evening）
+     * @param {string} req.query.startTime - 开始时间（可选）
+     * @param {string} req.query.endTime - 结束时间（可选）
+     */
     async getAvailableStudents(req, res) {
         try {
             const { date, timeSlot, startTime, endTime } = req.query;
@@ -118,8 +141,18 @@ const scheduleController = {
         }
     },
 
-    // 检查时间冲突 - 内部辅助函数（返回结构化详情）
-    // 增加可选 client 参数以支持在事务中重用同一连接
+    /**
+     * 检查排课冲突（内部辅助函数）
+     * @description 检测教师/学生的时间冲突，返回结构化详情
+     * @param {number} teacherId - 教师ID
+     * @param {number} studentId - 学生ID
+     * @param {string} date - 日期
+     * @param {string} timeSlot - 时段
+     * @param {string} startTime - 开始时间
+     * @param {string} endTime - 结束时间
+     * @param {Object} client - 可选的事务客户端
+     * @returns {Promise<Object>} 冲突检测结果
+     */
     async _checkScheduleConflicts(teacherId, studentId, date, timeSlot, startTime, endTime, client) {
         try {
             // timeSlot 转时间范围
@@ -137,8 +170,8 @@ const scheduleController = {
 
             const caDateExpr = await getCaDateExpr();
             // 精确重复检查（同一教师/学生/日期/时间段）
-                        const q = client ? client.query.bind(client) : db.query;
-                        const dupRes = await q(
+            const q = client ? client.query.bind(client) : db.query;
+            const dupRes = await q(
                 `SELECT id, teacher_id, student_id, course_id, ${caDateExpr} as date, start_time, end_time, status, location
                  FROM course_arrangement
                  WHERE teacher_id = $1 AND student_id = $2 AND ${caDateExpr} = $3
@@ -151,7 +184,7 @@ const scheduleController = {
             }
 
             // 教师时间冲突（重叠）
-                        const teacherConflict = await q(
+            const teacherConflict = await q(
                 `SELECT id, teacher_id, student_id, course_id, ${caDateExpr} as date, start_time, end_time, status, location
                  FROM course_arrangement 
                  WHERE teacher_id = $1 
@@ -166,7 +199,7 @@ const scheduleController = {
             }
 
             // 学生时间冲突（重叠）
-                        const studentConflict = await q(
+            const studentConflict = await q(
                 `SELECT id, teacher_id, student_id, course_id, ${caDateExpr} as date, start_time, end_time, status, location
                  FROM course_arrangement 
                  WHERE student_id = $1 
@@ -188,7 +221,10 @@ const scheduleController = {
         }
     },
 
-    // Express 处理器：检查排课冲突
+    /**
+     * 检查排课冲突（接口处理器）
+     * @description 提供 HTTP 接口检测排课冲突
+     */
     async checkScheduleConflicts(req, res) {
         try {
             const { teacherId, studentId, date, timeSlot, startTime, endTime } = req.body;
@@ -204,7 +240,10 @@ const scheduleController = {
         }
     },
 
-    // 创建课程安排
+    /**
+     * 创建课程安排
+     * @description 在事务中创建排课记录，支持多学生批量创建
+     */
     async createSchedule(req, res) {
         try {
             const {
@@ -262,7 +301,10 @@ const scheduleController = {
         }
     },
 
-    // 获取课程类型
+    /**
+     * 获取课程类型
+     * @description 返回所有可用的课程类型列表
+     */
     async getScheduleTypes(req, res) {
         try {
             const result = await db.query(
@@ -275,28 +317,32 @@ const scheduleController = {
         }
     },
 
-    // 教师确认课程
+    /**
+     * 教师确认课程
+     * @description 教师确认指定课程，更新状态为已确认
+     * @param {string} req.params.scheduleId - 课程ID
+     */
     async confirmTeacher(req, res) {
         try {
             const { scheduleId } = req.params;
-            
+
             // 检查权限（新表）
             const schedule = await db.query('SELECT teacher_id FROM course_arrangement WHERE id = $1', [scheduleId]);
             if (schedule.rows.length === 0) {
                 return res.status(404).json({ message: '课程不存在' });
             }
-            
+
             // 修复：使用统一的 userType 字段判断管理员身份
             if (schedule.rows[0].teacher_id !== req.user.id && req.user.userType !== 'admin') {
                 return res.status(403).json({ message: '无权操作' });
             }
-            
+
             // 更新状态为 confirmed
             await db.query(
                 'UPDATE course_arrangement SET status = \'confirmed\' WHERE id = $1',
                 [scheduleId]
             );
-            
+
             res.json({ success: true });
         } catch (error) {
             console.error('确认课程错误:', error);
@@ -304,17 +350,21 @@ const scheduleController = {
         }
     },
 
-    // 管理员确认课程
+    /**
+     * 管理员确认课程
+     * @description 管理员确认指定课程，更新状态为已确认
+     * @param {string} req.params.scheduleId - 课程ID
+     */
     async confirmAdmin(req, res) {
         try {
             const { scheduleId } = req.params;
-            
+
             // 更新排课状态
             await db.query(
                 'UPDATE course_arrangement SET status = \'confirmed\' WHERE id = $1',
                 [scheduleId]
             );
-            
+
             res.json({ success: true });
         } catch (error) {
             console.error('管理员确认课程错误:', error);

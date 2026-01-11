@@ -60,6 +60,9 @@ function formatDate(date) {
 /**
  * Setup event listeners for buttons
  */
+/**
+ * Setup event listeners for buttons
+ */
 function setupEventListeners() {
     const queryBtn = document.getElementById('teachingQueryBtn');
 
@@ -81,8 +84,80 @@ function setupEventListeners() {
 
     const exportBtn = document.getElementById('teachingExportBtn');
     if (exportBtn) {
-        exportBtn.addEventListener('click', exportLearningData);
+        exportBtn.replaceWith(exportBtn.cloneNode(true)); // Remove old listeners
+        const newExportBtn = document.getElementById('teachingExportBtn');
+        newExportBtn.addEventListener('click', exportLearningData);
     }
+
+    // Quick Query Buttons Logic
+    const presetBtns = document.querySelectorAll('.preset-btn');
+    presetBtns.forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            // UI Feedback
+            presetBtns.forEach(b => {
+                b.style.backgroundColor = 'white';
+                b.style.color = '#333';
+            });
+            e.target.style.backgroundColor = '#dcfce7';
+            e.target.style.color = '#15803d';
+
+            const range = e.target.dataset.range;
+            const today = new Date();
+            let start = new Date();
+            let end = new Date(); // End is always today
+
+            switch (range) {
+                case 'prev_week':
+                    // 上周 (Last full week: Monday to Sunday)
+                    const day = today.getDay();
+                    const diffToMon = today.getDate() - day + (day === 0 ? -6 : 1);
+                    const lastSun = new Date(today);
+                    lastSun.setDate(diffToMon - 1);
+                    const lastMon = new Date(today);
+                    lastMon.setDate(diffToMon - 7);
+                    start = lastMon;
+                    end = lastSun;
+                    break;
+                case 'prev_month':
+                    // 上月 (Last full Month)
+                    start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                    end = new Date(today.getFullYear(), today.getMonth(), 0);
+                    break;
+                case 'prev_quarter':
+                    // 上季度 (Last full Quarter)
+                    const currentQuarter = Math.floor((today.getMonth() + 3) / 3);
+                    const lastQuarter = currentQuarter - 1;
+                    if (lastQuarter === 0) { // Was Q1, so now Q4 of last year
+                        start = new Date(today.getFullYear() - 1, 9, 1);
+                        end = new Date(today.getFullYear() - 1, 12, 0);
+                    } else {
+                        start = new Date(today.getFullYear(), (lastQuarter - 1) * 3, 1);
+                        end = new Date(today.getFullYear(), lastQuarter * 3, 0);
+                    }
+                    break;
+                case 'prev_year':
+                    // 去年 (Last full Year)
+                    start = new Date(today.getFullYear() - 1, 0, 1);
+                    end = new Date(today.getFullYear() - 1, 11, 31);
+                    break;
+            }
+
+            // Set inputs
+            const startDateInput = document.getElementById('teachingStartDate');
+            const endDateInput = document.getElementById('teachingEndDate');
+
+            if (startDateInput && endDateInput) {
+                // Ensure date objects are valid before formatting
+                if (!isNaN(start) && !isNaN(end)) {
+                    startDateInput.value = formatDate(start);
+                    endDateInput.value = formatDate(end);
+
+                    // Trigger Query
+                    if (queryBtn) queryBtn.click();
+                }
+            }
+        });
+    });
 }
 
 /**
@@ -405,37 +480,87 @@ function renderDailyLearningChart(schedules) {
 }
 
 /**
- * Export learning data to CSV
+ * Export learning data via Independent Service (Direct Download)
  */
-function exportLearningData() {
-    if (!currentLearningData || !currentLearningData.schedules || currentLearningData.schedules.length === 0) {
-        alert('没有可导出的数据');
+async function exportLearningData() {
+    const startDate = document.getElementById('teachingStartDate')?.value;
+    const endDate = document.getElementById('teachingEndDate')?.value;
+    const exportBtn = document.getElementById('teachingExportBtn');
+
+    if (!startDate || !endDate) {
+        alert('请先选择日期范围');
         return;
     }
 
-    const headers = ['日期', '时间段', '课程类型', '教师姓名', '上课地点', '状态'];
-    const rows = currentLearningData.schedules.map(schedule => [
-        formatDateDisplay(schedule.date || schedule.lesson_date),
-        `${schedule.start_time} - ${schedule.end_time}`,
-        schedule.schedule_type_cn || SCHEDULE_TYPE_MAP[schedule.schedule_type] || schedule.schedule_type || '--',
-        schedule.teacher_name || '--',
-        schedule.location || '--',
-        STATUS_LABELS[schedule.status] || schedule.status
-    ]);
+    if (exportBtn) {
+        exportBtn.disabled = true;
+        exportBtn.innerHTML = '<span class="material-icons-round spinner" style="font-size:18px; margin-right:4px; animation:spin 1s linear infinite;">sync</span> 导出中...';
+    }
 
-    const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.join(','))
-    ].join('\n');
+    try {
+        const response = await fetch(`/api/student/export?startDate=${startDate}&endDate=${endDate}`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+        });
 
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || '导出失败');
+        }
 
-    link.setAttribute('href', url);
-    link.setAttribute('download', `学习记录_${formatDate(new Date())}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+        // Check Content-Type
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const error = await response.json();
+            throw new Error(error.message || '导出虽成功但在返回JSON: ' + JSON.stringify(error));
+        }
+
+        // Get Filename from headers
+        const disposition = response.headers.get('Content-Disposition');
+        let filename = `学习记录_${startDate}_${endDate}.xlsx`; // Fallback
+
+        // Try to get student name from UI for better fallback
+        const studentName = document.querySelector('.user-info .name')?.textContent?.trim() || '';
+        if (studentName) {
+            filename = `[${studentName}]${filename}`;
+        }
+
+        if (disposition && disposition.indexOf('attachment') !== -1) {
+            // Regex to capture filename="encoded_string"
+            const matches = /filename="([^"]*)"/.exec(disposition);
+            if (matches != null && matches[1]) {
+                filename = decodeURIComponent(matches[1]);
+            }
+        }
+
+        const blob = await response.blob();
+        console.log('[Export Debug] Blob size:', blob.size, 'Type:', blob.type);
+
+        if (blob.size < 100) {
+            // Suspiciously small, might be an error text
+            const text = await blob.text();
+            console.warn('[Export Debug] Small blob content:', text);
+            // Don't throw yet, let user try to open it, or alert?
+        }
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+    } catch (error) {
+        console.error('Export failed:', error);
+        alert('导出失败: ' + error.message);
+    } finally {
+        if (exportBtn) {
+            exportBtn.disabled = false;
+            exportBtn.innerHTML = '<span class="material-icons-round" style="font-size:18px; margin-right:4px;">download</span> 导出';
+        }
+    }
 }
+

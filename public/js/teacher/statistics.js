@@ -23,8 +23,8 @@ function setupDateRangePickers() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const startDateInput = document.getElementById('statsStartDate');
-    const endDateInput = document.getElementById('statsEndDate');
+    const startDateInput = document.getElementById('teachingStartDate');
+    const endDateInput = document.getElementById('teachingEndDate');
 
     if (startDateInput) {
         startDateInput.value = formatDate(firstDay);
@@ -45,11 +45,63 @@ function formatDate(date) {
 }
 
 /**
+ * Apply date preset
+ */
+function applyDatePreset(type) {
+    const now = new Date();
+    let start, end;
+
+    switch (type) {
+        case 'last-week': {
+            // Find last week's Monday
+            const dayOfWeek = now.getDay() || 7; // 1 (Mon) - 7 (Sun)
+            const daysToLastMonday = dayOfWeek + 6;
+            start = new Date(now);
+            start.setDate(now.getDate() - daysToLastMonday);
+            end = new Date(start);
+            end.setDate(start.getDate() + 6);
+            break;
+        }
+        case 'last-month': {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            end = new Date(now.getFullYear(), now.getMonth(), 0);
+            break;
+        }
+        case 'last-quarter': {
+            const currentQuarter = Math.floor(now.getMonth() / 3);
+            let targetQuarter = currentQuarter - 1;
+            let targetYear = now.getFullYear();
+
+            if (targetQuarter < 0) {
+                targetQuarter = 3;
+                targetYear -= 1;
+            }
+
+            start = new Date(targetYear, targetQuarter * 3, 1);
+            end = new Date(targetYear, (targetQuarter + 1) * 3, 0);
+            break;
+        }
+        case 'last-year': {
+            start = new Date(now.getFullYear() - 1, 0, 1);
+            end = new Date(now.getFullYear() - 1, 11, 31);
+            break;
+        }
+    }
+
+    if (start && end) {
+        const startDateInput = document.getElementById('teachingStartDate');
+        const endDateInput = document.getElementById('teachingEndDate');
+        if (startDateInput) startDateInput.value = formatDate(start);
+        if (endDateInput) endDateInput.value = formatDate(end);
+    }
+}
+
+/**
  * Setup event listeners for buttons
  */
 function setupEventListeners() {
-    const queryBtn = document.getElementById('statsQueryBtn');
-    const exportBtn = document.getElementById('statsExportBtn');
+    const queryBtn = document.getElementById('teachingQueryBtn');
+
 
     if (queryBtn) {
         queryBtn.addEventListener('click', async () => {
@@ -57,19 +109,33 @@ function setupEventListeners() {
         });
     }
 
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            exportStatisticsData();
-        });
-    }
+    // Preset Buttons Logic
+    const presets = [
+        { id: 'btnLastWeek', type: 'last-week' },
+        { id: 'btnLastMonth', type: 'last-month' },
+        { id: 'btnLastQuarter', type: 'last-quarter' },
+        { id: 'btnLastYear', type: 'last-year' }
+    ];
+
+    presets.forEach(preset => {
+        const btn = document.getElementById(preset.id);
+        if (btn) {
+            btn.addEventListener('click', async () => {
+                applyDatePreset(preset.type);
+                await loadStatistics();
+            });
+        }
+    });
+
+
 }
 
 /**
  * Load statistics data and render chart
  */
 export async function loadStatistics() {
-    const startDate = document.getElementById('statsStartDate')?.value;
-    const endDate = document.getElementById('statsEndDate')?.value;
+    const startDate = document.getElementById('teachingStartDate')?.value;
+    const endDate = document.getElementById('teachingEndDate')?.value;
 
     if (!startDate || !endDate) {
         console.error('请选择日期范围');
@@ -240,45 +306,7 @@ function getColorForType(index) {
 /**
  * Export statistics data to CSV
  */
-function exportStatisticsData() {
-    if (currentStatsData.length === 0) {
-        alert('没有可导出的数据');
-        return;
-    }
 
-    // Create CSV content
-    const headers = ['日期', '学生姓名', '课程类型', '时间段', '状态'];
-    const rows = currentStatsData.map(schedule => [
-        schedule.lesson_date || '',
-        schedule.student_name || '',
-        schedule.course_type || '其他',
-        schedule.time_slot || '',
-        getStatusLabel(schedule.status)
-    ]);
-
-    const csvContent = [
-        headers.join(','),
-        ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    // Add BOM for Excel UTF-8 support
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-
-    // Create download link
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    const startDate = document.getElementById('statsStartDate')?.value || '';
-    const endDate = document.getElementById('statsEndDate')?.value || '';
-
-    link.setAttribute('href', url);
-    link.setAttribute('download', `教师授课统计_${startDate}_${endDate}.csv`);
-    link.style.visibility = 'hidden';
-
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
 
 /**
  * Get status label in Chinese

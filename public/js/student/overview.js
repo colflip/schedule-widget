@@ -105,7 +105,7 @@ function updateOverviewDisplay(data) {
 }
 
 /**
- * Render today's schedules list
+ * Render today's schedules list with grouping
  */
 function renderTodaySchedules(schedules) {
     const container = todayListEl();
@@ -120,11 +120,26 @@ function renderTodaySchedules(schedules) {
         return;
     }
 
+    // 1. Grouping Logic
+    const groups = {};
+    schedules.forEach(schedule => {
+        const key = `${schedule.start_time}-${schedule.end_time}-${schedule.location || 'unknown'}`;
+        if (!groups[key]) {
+            groups[key] = {
+                base: schedule,
+                items: []
+            };
+        }
+        groups[key].items.push(schedule);
+    });
+
+    // 2. Sort and Render
+    const groupedSchedules = Object.values(groups).sort((a, b) => {
+        return (a.base.start_time || '').localeCompare(b.base.start_time || '');
+    });
+
     const fragment = document.createDocumentFragment();
-    schedules
-        .slice()
-        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-        .forEach(schedule => fragment.appendChild(buildTodayScheduleCard(schedule)));
+    groupedSchedules.forEach(group => fragment.appendChild(buildTodayScheduleCard(group.base, group.items)));
 
     container.appendChild(fragment);
 }
@@ -132,7 +147,8 @@ function renderTodaySchedules(schedules) {
 /**
  * Build today schedule card
  */
-function buildTodayScheduleCard(schedule) {
+function buildTodayScheduleCard(schedule, items = []) {
+    const isMerged = items.length > 1;
     const status = (schedule.status || 'pending').toLowerCase();
 
     // Status localization map
@@ -169,10 +185,18 @@ function buildTodayScheduleCard(schedule) {
     });
 
     // Teacher
+    let teacherNameText = schedule.teacher_name || '未分配教师';
+    if (isMerged) {
+        const tNames = [...new Set(items.map(i => i.teacher_name))];
+        teacherNameText = tNames.join('、');
+    }
+
     const teacherSpan = createElement('span', '', {
-        textContent: schedule.teacher_name || '未分配教师',
+        textContent: teacherNameText,
         style: 'font-weight: 500;'
     });
+    if (isMerged) teacherSpan.title = items.map(i => i.teacher_name).join(', ');
+
     infoContainer.appendChild(teacherSpan);
     infoContainer.appendChild(document.createTextNode('，'));
 
@@ -191,6 +215,13 @@ function buildTodayScheduleCard(schedule) {
     });
     infoContainer.appendChild(typeChip);
     infoContainer.appendChild(document.createTextNode('，'));
+
+    // Merged Badge
+    if (isMerged) {
+        const mergedBadge = createElement('span', 'chip', { textContent: `${items.length}个合并` });
+        mergedBadge.style.cssText = 'font-size:11px;background:#e0f2fe;color:#0284c7;padding:1px 6px;margin-right:4px;';
+        infoContainer.appendChild(mergedBadge);
+    }
 
     // Location
     const locationText = schedule.location || '上课地点未确定';

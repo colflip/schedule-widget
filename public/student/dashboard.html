@@ -886,12 +886,25 @@
                                 <input type="date" id="teachingEndDate">
                             </div>
                         </div>
+
                         <div class="stats-btn-group">
                             <button id="teachingQueryBtn" class="search-btn">
                                 <span class="material-icons-round"
                                     style="font-size:18px; margin-right:4px;">search</span>
                                 查询
                             </button>
+
+                            <div class="preset-btn-group" style="display:flex; gap:8px;">
+                                <button class="preset-btn" data-range="prev_week"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上周</button>
+                                <button class="preset-btn" data-range="prev_month"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上月</button>
+                                <button class="preset-btn" data-range="prev_quarter"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上季度</button>
+                                <button class="preset-btn" data-range="prev_year"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">去年</button>
+                            </div>
+
                             <button id="teachingExportBtn" class="info-btn">
                                 <span class="material-icons-round"
                                     style="font-size:18px; margin-right:4px;">download</span>

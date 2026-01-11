@@ -86,16 +86,32 @@ function renderTodaySchedules(schedules) {
         return;
     }
 
+    // 1. Grouping Logic
+    const groups = {};
+    schedules.forEach(schedule => {
+        const key = `${schedule.start_time}-${schedule.end_time}-${schedule.location || 'unknown'}`;
+        if (!groups[key]) {
+            groups[key] = {
+                base: schedule,
+                items: []
+            };
+        }
+        groups[key].items.push(schedule);
+    });
+
+    // 2. Sort and Render
+    const groupedSchedules = Object.values(groups).sort((a, b) => {
+        return (a.base.start_time || '').localeCompare(b.base.start_time || '');
+    });
+
     const fragment = document.createDocumentFragment();
-    schedules
-        .slice()
-        .sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''))
-        .forEach(schedule => fragment.appendChild(buildTodayScheduleCard(schedule)));
+    groupedSchedules.forEach(group => fragment.appendChild(buildTodayScheduleCard(group.base, group.items)));
 
     container.appendChild(fragment);
 }
 
-function buildTodayScheduleCard(schedule) {
+function buildTodayScheduleCard(schedule, items = []) {
+    const isMerged = items.length > 1;
     const status = (schedule.status || 'pending').toLowerCase();
     const card = createElement('div', `today-schedule-card status-${status}`);
     card.setAttribute('role', 'listitem');
@@ -124,11 +140,26 @@ function buildTodayScheduleCard(schedule) {
     infoCol.style.cssText = 'flex: 1; display: flex; flex-direction: column; gap: 4px;';
 
     const studentRow = createElement('div', 'student-row');
-    studentRow.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+    studentRow.style.cssText = 'display: flex; align-items: center; gap: 8px; flex-wrap: wrap;';
+
+    // Prepare Student Name(s) logic
+    let studentNameText = schedule.student_name || '未指定学生';
+    if (isMerged) {
+        const uniqueNames = [...new Set(items.map(i => i.student_name))];
+        studentNameText = uniqueNames.join('、');
+        if (uniqueNames.length > 3) {
+            studentNameText = `${uniqueNames.slice(0, 3).join('、')} 等${uniqueNames.length}人`;
+        }
+    }
 
     const studentName = createElement('span', 'student-name', {
-        textContent: schedule.student_name || '未指定学生'
+        textContent: studentNameText
     });
+    // Add tooltip if merged
+    if (isMerged) {
+        studentName.title = items.map(i => i.student_name).join(', ');
+    }
+
     studentName.style.cssText = 'font-weight: 600; font-size: 15px; color: #0f172a;';
 
     const typeBadge = createElement('span', 'type-badge', {
@@ -138,6 +169,13 @@ function buildTodayScheduleCard(schedule) {
 
     studentRow.appendChild(studentName);
     studentRow.appendChild(typeBadge);
+
+    if (isMerged) {
+        const mergedBadge = createElement('span', 'merged-badge', { textContent: `${items.length}个合并` });
+        mergedBadge.style.cssText = 'font-size: 11px; color: #0284c7; background: #e0f2fe; padding: 1px 6px; border-radius: 4px; border: 1px solid #bae6fd;';
+        studentRow.appendChild(mergedBadge);
+    }
+
     infoCol.appendChild(studentRow);
 
     const locationRow = createElement('div', 'location-row');

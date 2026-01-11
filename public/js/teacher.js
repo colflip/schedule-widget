@@ -1,3 +1,9 @@
+/**
+ * 教师端主入口文件
+ * @description 教师仪表盘初始化和导航逻辑
+ * @module teacher
+ */
+
 import { initOverviewSection, loadOverview } from './teacher/overview.js';
 import { initProfileSection } from './teacher/profile.js';
 import { initAvailabilitySection, refreshAvailability } from './teacher/availability.js';
@@ -193,18 +199,14 @@ function setupLogout() {
 
 function setupNavigation() {
     const navItems = document.querySelectorAll('.nav-item');
-    console.log('[Teacher Dashboard] setupNavigation: Found', navItems.length, 'nav items');
 
-    navItems.forEach((item, index) => {
+    navItems.forEach((item) => {
         const sectionId = item.dataset.section;
-        console.log(`[Teacher Dashboard] Binding nav item ${index}:`, sectionId);
 
         item.addEventListener('click', (event) => {
             event.preventDefault();
-            console.log('[Teacher Dashboard] Nav item clicked:', sectionId);
 
             if (!sectionId) {
-                console.warn('[Teacher Dashboard] No section ID found');
                 return;
             }
 

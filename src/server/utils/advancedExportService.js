@@ -59,20 +59,17 @@ class AdvancedExportService {
             { key: 'participation_rate', header: '参课率', width: 10 }
         ],
         teacher_schedule: [
+            { key: 'student_name', header: '学生名称', width: 15 },
+            { key: 'type', header: '类型', width: 12 },
+            { key: 'date', header: '日期', width: 15 },
+            { key: 'week', header: '星期', width: 10 },
+            { key: 'time_range', header: '时间段', width: 15 },
+            { key: 'status', header: '状态', width: 12 },
+            { key: 'created_at', header: '创建时间', width: 18 },
             { key: 'schedule_id', header: '排课ID', width: 12 },
             { key: 'teacher_id', header: '教师ID', width: 12 },
-            { key: 'teacher_name', header: '教师名称', width: 15 },
             { key: 'student_id', header: '学生ID', width: 12 },
-            { key: 'student_name', header: '学生名称', width: 15 },
-            { key: 'date', header: '日期', width: 15 },
-            { key: 'time_range', header: '时间', width: 15 },
-            { key: 'start_time', header: 'start_time', width: 10 },
-            { key: 'end_time', header: 'end_time', width: 10 },
-            { key: 'location', header: '地点', width: 20 },
-            { key: 'type', header: '类型', width: 12 },
-            { key: 'status', header: '状态', width: 12 },
-            { key: 'notes', header: '备注', width: 25 },
-            { key: 'created_at', header: '创建时间', width: 18 }
+            { key: 'notes', header: '备注', width: 25 }
         ],
         student_schedule: [
             { key: 'schedule_id', header: '排课ID', width: 12 },
@@ -279,46 +276,218 @@ class AdvancedExportService {
         }));
     }
 
+
     /**
-     * 导出指定时间段的教师排课记录
+     * 生成导出数据（Controller入口）
      */
-    async exportTeacherSchedule(startDate, endDate) {
+    async generateExportData(type, startDate, endDate, filters = {}) {
+        // 验证参数
+        this.validateExportType(type);
         this.validateDateRange(startDate, endDate);
 
-        // 获取动态日期表达式
-        const dateExpr = await this.getDateExpression();
+        let data;
+        let filenamePrefix = '';
+        let userName = filters.user_name;
 
-        const query = `
-            SELECT 
-                ca.id as schedule_id,
-                t.id as teacher_id,
-                t.name as teacher_name,
-                s.id as student_id,
-                s.name as student_name,
-                ${dateExpr}::date as date,
-                TO_CHAR(ca.start_time, 'HH24:MI') as start_time,
-                TO_CHAR(ca.end_time, 'HH24:MI') as end_time,
-                (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
-                ca.location,
-                st.name as type,
-                ca.status,
-                ca.teacher_comment as notes,
-                ca.created_at
+        if (type === 'teacher_schedule') {
+            // 获取原始数据
+            const rawData = await this.queryTeacherSchedule(startDate, endDate, filters);
+
+            if (!userName && rawData.length > 0) userName = rawData[0].teacher_name;
+            filenamePrefix = `[${userName || '教师'}]授课记录`;
+
+            // 构建多Sheet数据
+            data = {
+                '总览表': this.formatOverviewData(rawData, 'teacher'),
+                '明细信息表': this.aggregateDetails(rawData, 'teacher')
+            };
+        } else if (type === 'student_schedule') {
+            const rawData = await this.queryStudentSchedule(startDate, endDate, filters);
+
+            if (!userName && rawData.length > 0) userName = rawData[0].student_name;
+            filenamePrefix = `[${userName || '学生'}]授课记录`;
+
+            data = {
+                '总览表': this.formatOverviewData(rawData, 'student'),
+                '明细信息表': this.aggregateDetails(rawData, 'student')
+            };
+        }
+
+        // 返回统一结果结构
+        return {
+            format: 'excel',
+            data: data,
+            filename: `${filenamePrefix}_[${startDate}_${endDate}]_${this.getTimestamp()}.xlsx`
+        };
+    }
+
+    getTimestamp() {
+        const now = new Date();
+        const yyyyMMdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+        const hhmmss = now.toTimeString().slice(0, 8).replace(/:/g, '');
+        return `${yyyyMMdd}${hhmmss}`;
+    }
+
+    /**
+     * 查询教师排课数据 (支持过滤)
+     */
+    async queryTeacherSchedule(startDate, endDate, filters) {
+        const dateExpr = await this.getDateExpression();
+        let query = `
+SELECT
+ca.id as schedule_id,
+    ca.teacher_id,
+    t.name as teacher_name,
+    ca.student_id,
+    s.name as student_name,
+    ${dateExpr}:: date as date,
+        ca.start_time,
+        ca.end_time,
+        (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
+        ca.location,
+        st.name as type_name,
+        ca.status,
+        ca.teacher_comment as notes,
+        ca.created_at
             FROM course_arrangement ca
-            JOIN teachers t ON ca.teacher_id = t.id
-            JOIN students s ON ca.student_id = s.id
+            LEFT JOIN teachers t ON ca.teacher_id = t.id
+            LEFT JOIN students s ON ca.student_id = s.id
             LEFT JOIN schedule_types st ON ca.course_id = st.id
             WHERE ${dateExpr}::date BETWEEN $1 AND $2
-            ORDER BY ${dateExpr} DESC
         `;
 
-        const result = await this.db.query(query, [startDate, endDate]);
-        const rows = result.rows || [];
+        const values = [startDate, endDate];
 
-        // 验证数据量
-        this.validateDataSize(rows.length);
+        // 应用过滤器
+        if (filters.teacher_id) {
+            values.push(filters.teacher_id);
+            query += ` AND ca.teacher_id = $${values.length} `;
+        }
 
-        // 数据转换和脱敏
+        query += ` ORDER BY ${dateExpr} DESC, ca.start_time ASC`;
+
+        const result = await this.db.query(query, values);
+        return result.rows || [];
+    }
+
+    /**
+     * 查询学生排课数据
+     */
+    async queryStudentSchedule(startDate, endDate, filters) {
+        const dateExpr = await this.getDateExpression();
+        let query = `
+SELECT
+ca.id as schedule_id,
+    ca.student_id,
+    s.name as student_name,
+    ca.teacher_id,
+    t.name as teacher_name,
+    ${dateExpr}:: date as date,
+        ca.start_time,
+        ca.end_time,
+        (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
+        ca.location,
+        st.name as type_name,
+        ca.status,
+        ca.student_comment as notes,
+        ca.created_at
+            FROM course_arrangement ca
+            LEFT JOIN students s ON ca.student_id = s.id
+            LEFT JOIN teachers t ON ca.teacher_id = t.id
+            LEFT JOIN schedule_types st ON ca.course_id = st.id
+            WHERE ${dateExpr}::date BETWEEN $1 AND $2
+        `;
+
+        const values = [startDate, endDate];
+
+        if (filters.student_id) {
+            values.push(filters.student_id);
+            query += ` AND ca.student_id = $${values.length} `;
+        }
+
+        query += ` ORDER BY ${dateExpr} DESC, ca.start_time ASC`;
+
+        const result = await this.db.query(query, values);
+        return result.rows || [];
+    }
+
+    /**
+     * 格式化总览表数据
+     */
+    formatOverviewData(rawData, role) {
+        return rawData.map(row => {
+            const dateObj = new Date(row.date);
+            const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const week = days[dateObj.getDay()];
+
+            // 基础字段
+            const item = {
+                'student_name': row.student_name,
+                'type': row.type_name || '未知',
+                'date': row.date instanceof Date ? row.date.toISOString().slice(0, 10) : row.date,
+                'week': week,
+                'time_range': row.time_range,
+                'status': this.formatStatus(row.status),
+                'created_at': this.formatDateTime(row.created_at),
+                'schedule_id': row.schedule_id,
+                'teacher_id': row.teacher_id,
+                'student_id': row.student_id,
+                'notes': row.notes || ''
+            };
+            return item;
+        });
+    }
+
+    /**
+     * 聚合明细信息表
+     */
+    aggregateDetails(rawData, role) {
+        // 如果是教师导出，按学生聚合；如果是学生导出，按教师聚合
+        const groupKey = role === 'teacher' ? 'student_name' : 'teacher_name';
+        const stats = {};
+
+        rawData.forEach(row => {
+            const name = row[groupKey] || '未知';
+            if (!stats[name]) {
+                stats[name] = {
+                    '老师姓名': name,
+                    '试教': 0,
+                    '入户': 0,
+                    '半次入户': 0,
+                    '评审': 0,
+                    '评审记录': 0,
+                    '集体活动': 0,
+                    '咨询': 0,
+                    '备注': ''
+                };
+            }
+
+            const type = row.type_name;
+            if (type && stats[name].hasOwnProperty(type)) {
+                stats[name][type]++;
+            } else if (type === '入户课') { // 兼容旧名称
+                stats[name]['入户']++;
+            }
+        });
+
+        return Object.values(stats);
+    }
+
+    formatStatus(status) {
+        const map = {
+            'pending': '待确认',
+            'confirmed': '已确认',
+            'completed': '已完成',
+            'cancelled': '已取消'
+        };
+        return map[status] || status;
+    }
+
+    /**
+     * 导出指定时间段的老师排课记录 (Admin兼容)
+     */
+    async exportTeacherSchedule(startDate, endDate) {
+        const rows = await this.queryTeacherSchedule(startDate, endDate, {});
         return rows.map(row => ({
             schedule_id: row.schedule_id,
             teacher_id: row.teacher_id,
@@ -330,53 +499,15 @@ class AdvancedExportService {
             end_time: row.end_time,
             time_range: row.time_range,
             location: this.sanitizeValue(row.location),
-            type: this.sanitizeValue(row.type),
+            type: this.sanitizeValue(row.type_name),
             status: row.status,
             notes: this.sanitizeValue(row.notes),
             created_at: this.formatDateTime(row.created_at)
         }));
     }
 
-    /**
-     * 导出指定时间段的学生排课记录
-     */
     async exportStudentSchedule(startDate, endDate) {
-        this.validateDateRange(startDate, endDate);
-
-        // 获取动态日期表达式
-        const dateExpr = await this.getDateExpression();
-
-        const query = `
-            SELECT 
-                ca.id as schedule_id,
-                s.id as student_id,
-                s.name as student_name,
-                t.id as teacher_id,
-                t.name as teacher_name,
-                ${dateExpr}::date as date,
-                TO_CHAR(ca.start_time, 'HH24:MI') as start_time,
-                TO_CHAR(ca.end_time, 'HH24:MI') as end_time,
-                (TO_CHAR(ca.start_time, 'HH24:MI') || '-' || TO_CHAR(ca.end_time, 'HH24:MI')) as time_range,
-                ca.location,
-                st.name as type,
-                ca.status,
-                ca.student_comment as notes,
-                ca.created_at
-            FROM course_arrangement ca
-            JOIN students s ON ca.student_id = s.id
-            JOIN teachers t ON ca.teacher_id = t.id
-            LEFT JOIN schedule_types st ON ca.course_id = st.id
-            WHERE ${dateExpr}::date BETWEEN $1 AND $2
-            ORDER BY ${dateExpr} DESC
-        `;
-
-        const result = await this.db.query(query, [startDate, endDate]);
-        const rows = result.rows || [];
-
-        // 验证数据量
-        this.validateDataSize(rows.length);
-
-        // 数据转换和脱敏
+        const rows = await this.queryStudentSchedule(startDate, endDate, {});
         return rows.map(row => ({
             schedule_id: row.schedule_id,
             student_id: row.student_id,
@@ -388,7 +519,7 @@ class AdvancedExportService {
             end_time: row.end_time,
             time_range: row.time_range,
             location: this.sanitizeValue(row.location),
-            type: this.sanitizeValue(row.type),
+            type: this.sanitizeValue(row.type_name),
             status: row.status,
             notes: this.sanitizeValue(row.notes),
             created_at: this.formatDateTime(row.created_at)
@@ -431,7 +562,6 @@ class AdvancedExportService {
             config.map(col => {
                 const value = row[col.key];
                 if (value === null || value === undefined) return '';
-                // CSV 转义：双引号和换行符
                 const strValue = String(value);
                 if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
                     return `"${strValue.replace(/"/g, '""')}"`;
@@ -447,29 +577,13 @@ class AdvancedExportService {
     }
 
     /**
-     * 格式化日期时间
-     */
-    formatDateTime(dateStr) {
-        if (!dateStr) return '';
-        try {
-            const date = new Date(dateStr);
-            return date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-        } catch {
-            return dateStr;
-        }
-    }
-
-    /**
      * 执行导出
      */
     async execute(type, format, startDate, endDate) {
-        // 验证参数
         this.validateExportType(type);
         this.validateFormat(format);
 
         let data;
-
-        // 获取数据
         switch (type) {
             case AdvancedExportService.EXPORT_TYPES.TEACHER_INFO:
                 data = await this.exportTeacherInfo();
@@ -487,7 +601,6 @@ class AdvancedExportService {
                 throw new Error('未知的导出类型');
         }
 
-        // 格式化数据
         if (format === 'excel') {
             return {
                 format: 'excel',
@@ -517,6 +630,19 @@ class AdvancedExportService {
         };
         return typeNames[type] || '导出数据';
     }
+
+    /**
+     * Format date time
+     */
+    formatDateTime(value) {
+        if (!value) return '';
+        try {
+            return new Date(value).toLocaleString('zh-CN', { hour12: false });
+        } catch (e) {
+            return String(value);
+        }
+    }
+
 }
 
 module.exports = AdvancedExportService;

@@ -1,3 +1,9 @@
+/**
+ * 测试数据生成脚本
+ * @description 生成管理员、教师、学生和排课记录的测试数据
+ * @usage node seed-test-data.js
+ */
+
 const bcrypt = require('bcrypt');
 const db = require('../db/db');
 

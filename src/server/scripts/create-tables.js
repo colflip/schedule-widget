@@ -1,3 +1,9 @@
+/**
+ * 数据库表创建脚本
+ * @description 创建系统所需的核心数据表（teachers, students, schedules等）
+ * @usage node create-tables.js
+ */
+
 const { Pool } = require('pg');
 require('dotenv').config();
 
@@ -12,7 +18,7 @@ async function createTables() {
 
   try {
     console.log('开始创建必要的表...');
-    
+
     // 创建teachers表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS teachers (
@@ -26,7 +32,7 @@ async function createTables() {
       );
     `);
     console.log('teachers表创建成功');
-    
+
     // 创建students表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS students (
@@ -42,7 +48,7 @@ async function createTables() {
       );
     `);
     console.log('students表创建成功');
-    
+
     // 创建schedules表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedules (
@@ -58,7 +64,7 @@ async function createTables() {
       );
     `);
     console.log('schedules表创建成功');
-    
+
     // 创建schedule_students表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedule_students (
@@ -69,7 +75,7 @@ async function createTables() {
       );
     `);
     console.log('schedule_students表创建成功');
-    
+
     // 创建schedule_types表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedule_types (
@@ -80,7 +86,7 @@ async function createTables() {
       );
     `);
     console.log('schedule_types表创建成功');
-    
+
     // 创建schedule_types_relation表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedule_types_relation (
@@ -91,7 +97,7 @@ async function createTables() {
       );
     `);
     console.log('schedule_types_relation表创建成功');
-    
+
     // 创建schedule_confirmations表
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schedule_confirmations (
@@ -103,7 +109,7 @@ async function createTables() {
       );
     `);
     console.log('schedule_confirmations表创建成功');
-    
+
     // 插入默认的排课类型
     await pool.query(`
       INSERT INTO schedule_types (name, description)

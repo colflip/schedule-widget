@@ -866,11 +866,27 @@
                                     style="font-size:18px; margin-right:4px;">search</span>
                                 查询
                             </button>
-                            <button id="teachingExportBtn" class="info-btn">
-                                <span class="material-icons-round"
-                                    style="font-size:18px; margin-right:4px;">download</span>
+                            <div class="preset-btn-group" style="display:flex; gap:8px; margin-left: 10px;">
+                                <button class="preset-btn" data-range="prev_week"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上周</button>
+                                <button class="preset-btn" data-range="prev_month"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上月</button>
+                                <button class="preset-btn" data-range="prev_quarter"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">上季度</button>
+                                <button class="preset-btn" data-range="prev_year"
+                                    style="padding:6px 12px; border:1px solid #e2e8f0; background:white; border-radius:6px; cursor:pointer;">去年</button>
+                            </div>
+                            <button id="teachingExportBtn" class="query-btn export-btn" style="margin-left: 8px;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
                                 导出
                             </button>
+
                         </div>
                     </div>
 
@@ -965,6 +981,8 @@
     <script src="/js/api-utils.js"></script>
     <script src="/js/date-range-utils.js"></script>
     <script src="/js/schedule-types-store.js"></script>
+
+    <script src="/js/export-dialog.js"></script>
     <script type="module" src="/js/teacher.js"></script>
 
 

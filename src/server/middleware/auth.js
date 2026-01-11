@@ -1,27 +1,36 @@
+/**
+ * 认证中间件
+ * @description 提供JWT认证、权限检查等功能
+ * @module middleware/auth
+ */
+
 const jwt = require('jsonwebtoken');
 
+/**
+ * 获取JWT密钥
+ * @returns {string} JWT密钥
+ */
 function getJwtSecret() {
     return process.env.JWT_SECRET || 'dev-insecure-secret';
 }
 
+/** 离线开发模式标志 */
 const isOfflineDev = process.env.OFFLINE_DEV === 'true';
-console.log('离线开发模式状态:', isOfflineDev);
 
+/**
+ * 认证中间件
+ * @description 验证JWT令牌，在离线开发模式下模拟用户
+ */
 const authMiddleware = async (req, res, next) => {
     try {
         // 离线开发模式：跳过鉴权，模拟用户
         if (isOfflineDev) {
-            console.log('离线开发模式激活，当前请求路径:', req.path);
-            // 检查请求路径来确定模拟的用户类型
-            // 修复：检查baseUrl或完整URL是否包含/teacher路径
+            // 根据请求路径确定模拟的用户类型
             const fullPath = req.baseUrl + req.path;
-            console.log('完整请求路径:', fullPath);
             if (fullPath && (fullPath.includes('/teacher') || req.path.includes('/teacher'))) {
-                console.log('检测到教师路径，模拟教师用户');
-                // 模拟教师用户（使用数据库中实际存在的教师ID）
+                // 模拟教师用户
                 req.user = { id: 40, userType: 'teacher', permissionLevel: 2 };
             } else {
-                console.log('未检测到教师路径，模拟管理员用户');
                 // 模拟管理员用户
                 req.user = { id: 1, userType: 'admin', permissionLevel: 1 };
             }
@@ -35,13 +44,13 @@ const authMiddleware = async (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, getJwtSecret());
-        
+
         req.user = {
             id: decoded.id,
             userType: decoded.userType,
             permissionLevel: decoded.permissionLevel
         };
-        
+
         next();
     } catch (error) {
         const msg = (error && error.name === 'TokenExpiredError') ? '认证令牌已过期' : '无效的认证令牌';
@@ -49,6 +58,10 @@ const authMiddleware = async (req, res, next) => {
     }
 };
 
+/**
+ * 管理员权限检查
+ * @description 仅允许管理员访问
+ */
 const adminOnly = (req, res, next) => {
     if (req.user.userType !== 'admin') {
         return res.status(403).json({ message: '需要管理员权限' });
@@ -56,6 +69,11 @@ const adminOnly = (req, res, next) => {
     next();
 };
 
+/**
+ * 权限级别检查
+ * @description 检查用户权限级别是否满足要求
+ * @param {number} level - 所需权限级别
+ */
 const checkPermissionLevel = (level) => {
     return (req, res, next) => {
         if (req.user.userType === 'admin' && req.user.permissionLevel > level) {

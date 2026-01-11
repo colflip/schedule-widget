@@ -222,7 +222,42 @@ const teacherController = {
         }
     },
 
+    /**
+     * 导出排课数据为Excel
+     * @param {Object} req 
+     * @param {Object} res 
+     */
+    async exportMySchedules(req, res) {
+        try {
+            const teacherId = req.user.id;
+            const { startDate, endDate } = req.query;
+
+            // 1. 实例化独立导出服务
+            const teacherExportService = require('../utils/teacherExportService');
+
+            // 2. 生成文件
+            const result = await teacherExportService.exportSchedule(teacherId, startDate, endDate);
+
+            // 3. 发送文件
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+
+            const encodedFilename = encodeURIComponent(result.filename);
+            res.setHeader('Content-Disposition', `attachment; filename="${encodedFilename}"`);
+            res.setHeader('Content-Length', result.buffer.length);
+
+            res.end(result.buffer);
+
+        } catch (error) {
+            console.error('Export error:', error);
+            res.status(error.status || 500).json({ error: error.message || '导出失败' });
+        }
+    },
+
     // 获取时间安排
+    /**
+     * 获取指定日期范围的时间安排
+     */
     async getAvailability(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -249,6 +284,9 @@ const teacherController = {
     },
 
     // 设置时间安排
+    /**
+     * 批量设置时间安排
+     */
     async setAvailability(req, res) {
         try {
             const { availabilityList } = req.body || {};
@@ -342,6 +380,9 @@ const teacherController = {
     },
 
     // 删除时间安排
+    /**
+     * 批量删除时间安排
+     */
     async deleteAvailability(req, res) {
         try {
             const { records = [], date, timeSlots = [] } = req.body || {};
@@ -482,26 +523,29 @@ const teacherController = {
         }
     },
 
-    // 确认课程
+    /**
+     * 确认课程
+     * @description 教师确认指定课程，更新课程状态为已确认
+     * @param {Object} req.params.id - 课程ID
+     * @param {Object} req.body.teacherConfirmed - 是否确认
+     * @param {Object} req.body.notes - 备注信息
+     */
     async confirmSchedule(req, res) {
         try {
             const { id } = req.params;
             const { teacherConfirmed, notes } = req.body;
 
-            // 验证是否是该教师的课程
-            console.log('教师确认课程请求', { scheduleId: id, byUserId: req.user && req.user.id });
+            // 查询课程信息，验证是否是该教师的课程
             const schedule = await db.query(
                 'SELECT id, teacher_id FROM course_arrangement WHERE id = $1',
                 [id]
             );
 
             if (schedule.rows.length === 0) {
-                console.warn('教师确认失败：课程不存在', { scheduleId: id });
                 return res.status(404).json({ message: '未找到相关课程' });
             }
 
             if (Number(schedule.rows[0].teacher_id) !== Number(req.user.id) && req.user.userType !== 'admin') {
-                console.warn('教师确认失败：无权操作', { scheduleId: id, ownerId: schedule.rows[0].teacher_id, byUserId: req.user && req.user.id });
                 return res.status(403).json({ message: '无权操作' });
             }
 
@@ -525,6 +569,13 @@ const teacherController = {
         }
     },
 
+    /**
+     * 更新课程状态
+     * @description 教师更新指定课程的状态（pending/confirmed/completed/cancelled）
+     * @param {Object} req.params.id - 课程ID
+     * @param {Object} req.body.status - 新状态
+     * @param {Object} req.body.notes - 备注信息
+     */
     async updateScheduleStatus(req, res) {
         try {
             const { id } = req.params;
@@ -534,13 +585,11 @@ const teacherController = {
                 return res.status(400).json({ message: '缺少课程状态' });
             }
 
+            // 规范化并验证状态值
             const normalizedStatus = String(status).trim().toLowerCase();
             if (!LESSON_STATUS_SET.has(normalizedStatus)) {
                 return res.status(400).json({ message: '非法的课程状态值' });
             }
-
-            // 记录尝试更新的信息以便排查（不会打印敏感内容）
-            console.log('尝试更新课程状态', { scheduleId: id, byUserId: req.user && req.user.id, newStatus: normalizedStatus });
 
             const result = await db.query(
                 `UPDATE course_arrangement
@@ -557,8 +606,6 @@ const teacherController = {
                 try {
                     const check = await db.query(`SELECT id, teacher_id FROM course_arrangement WHERE id = $1`, [id]);
                     if (check.rows && check.rows.length > 0) {
-                        const ownerId = check.rows[0].teacher_id;
-                        console.warn('课程存在但教师ID不匹配', { scheduleId: id, ownerId, byUserId: req.user && req.user.id });
                         return res.status(403).json({ message: '无权修改该课程' });
                     }
                 } catch (_) {
@@ -577,13 +624,17 @@ const teacherController = {
         }
     },
 
-    // 获取统计数据
+    /**
+     * 获取统计数据
+     * @description 获取教师在指定日期范围的排课统计（按类型、按日、按月）
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getStatistics(req, res) {
         try {
             const { startDate, endDate } = req.query;
-            console.log('获取统计数据请求:', { userId: req.user.id, startDate, endDate });
 
-            // 获取日期表达式（缓存）
+            // 获取日期表达式（带缓存）
             const dateExpr = await getDateExpr('ca');
 
             // 使用一个统一查询获取类型统计和每日统计，减少DB往返
@@ -697,11 +748,15 @@ const teacherController = {
         }
     },
 
-    // 获取授课总数
+    /**
+     * 获取授课总数
+     * @description 获取教师在指定日期范围的授课总数
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getTeachingCount(req, res) {
         try {
             const { startDate, endDate } = req.query;
-            console.log('获取授课总数请求:', { userId: req.user.id, startDate, endDate });
 
             const dateExpr = await getDateExpr('');
             const result = await db.query(`
@@ -724,7 +779,14 @@ const teacherController = {
         }
     },
 
-    // 获取详细的排课数据用于多系列折线图
+    /**
+     * 获取详细的排课数据
+     * @description 获取详细排课列表，用于生成多系列折线图
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     * @param {number} req.query.limit - 最大返回条数（可选，最大1000）
+     * @param {number} req.query.offset - 偏移量（可选）
+     */
     async getDetailedSchedules(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -839,11 +901,11 @@ const teacherController = {
             const currentPasswordHash = result.rows[0].password_hash;
 
             // 验证当前密码
+            // 验证当前密码
             let isValidPassword = false;
             try {
                 isValidPassword = await bcrypt.compare(currentPassword, currentPasswordHash);
-            } catch (error) {
-                console.error('密码比较错误:', error);
+            } catch (_) {
                 return res.status(500).json({ message: '密码验证失败' });
             }
 
@@ -876,18 +938,11 @@ const teacherController = {
 
             res.json({ message: '密码修改成功' });
         } catch (error) {
-            console.error('修改密码错误:', error);
-            console.error('错误详情:', {
-                message: error.message,
-                stack: error.stack,
-                code: error.code
-            });
-            res.status(500).json({
-                message: '服务器错误',
-                error: process.env.NODE_ENV === 'development' ? error.message : undefined
-            });
+            console.error('修改密码错误:', error.message);
+            res.status(500).json({ message: '服务器错误' });
         }
-    }
+    },
+
 };
 
 module.exports = teacherController;

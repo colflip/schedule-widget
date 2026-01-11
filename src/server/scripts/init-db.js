@@ -1,3 +1,9 @@
+/**
+ * 数据库初始化脚本
+ * @description 执行 schema.sql 初始化数据库结构
+ * @usage node init-db.js
+ */
+
 const fs = require('fs');
 const path = require('path');
 const db = require('../db/db');

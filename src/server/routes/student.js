@@ -1,3 +1,9 @@
+/**
+ * 学生路由
+ * @description 学生端API路由配置，包括个人信息、时间安排、课程和统计
+ * @module routes/student
+ */
+
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
@@ -24,6 +30,9 @@ router.get('/overview', authMiddleware, studentController.getOverview);
 
 // 数据汇总
 router.get('/data-summary', authMiddleware, studentController.getDataSummary);
+
+// 导出功能
+router.get('/export', authMiddleware, studentController.exportMySchedules);
 
 // 确认课程
 router.post('/confirm-schedule/:id', authMiddleware, studentController.confirmSchedule);

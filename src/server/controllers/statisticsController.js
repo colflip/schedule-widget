@@ -1,6 +1,16 @@
+/**
+ * 统计数据控制器
+ * @description 提供管理员、教师、学生的各类统计数据查询
+ */
+
 const db = require('../db/db');
 
-// 动态构建 course_arrangement 日期表达式（兼容 arr_date/class_date/date 缺失场景）
+/**
+ * 动态构建 course_arrangement 日期表达式
+ * @description 兼容 arr_date/class_date/date 缺失场景，带缓存
+ * @param {string} alias - 表别名
+ * @returns {Promise<string>} SQL日期表达式
+ */
 const __dateExprCache = {};
 async function getDateExpr(alias) {
     const key = `expr_${alias || ''}`;
@@ -22,7 +32,10 @@ async function getDateExpr(alias) {
 }
 
 const statisticsController = {
-    // 获取管理员总览统计
+    /**
+     * 获取管理员总览统计
+     * @description 返回系统总览数据：教师/学生总数、已完成/待处理课程数、本月课程数
+     */
     async getAdminOverview(req, res) {
         try {
             const dateExprNoAlias = await getDateExpr('');
@@ -57,7 +70,12 @@ const statisticsController = {
         }
     },
 
-    // 获取管理员排课统计
+    /**
+     * 获取管理员排课统计
+     * @description 返回排课统计：按课程类型、按月份、按状态
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getAdminScheduleStats(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -109,7 +127,12 @@ const statisticsController = {
         }
     },
 
-    // 获取管理员用户统计
+    /**
+     * 获取管理员用户统计
+     * @description 返回教师和学生的课程统计数据
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getAdminUserStats(req, res) {
         try {
             const { startDate, endDate } = req.query;
@@ -151,7 +174,13 @@ const statisticsController = {
         }
     },
 
-    // 获取教师统计
+    /**
+     * 获取教师统计
+     * @description 返回指定教师的课程类型、月度、学生统计
+     * @param {string} req.params.id - 教师ID
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getTeacherStats(req, res) {
         try {
             const { id } = req.params;
@@ -215,7 +244,13 @@ const statisticsController = {
         }
     },
 
-    // 获取学生统计
+    /**
+     * 获取学生统计
+     * @description 返回指定学生的课程类型、月度、教师统计
+     * @param {string} req.params.id - 学生ID
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
     async getStudentStats(req, res) {
         try {
             const { id } = req.params;

@@ -70,6 +70,17 @@ window.ExportDialog = (function () {
      * 初始化对话框 HTML 结构
      */
     function createDialogHTML() {
+        // 根据角色过滤导出类型
+        const currentUser = window.currentUser || {};
+        const userType = currentUser.userType || 'admin';
+
+        let filteredTypes = Object.entries(EXPORT_TYPE_CONFIG);
+        if (userType === 'teacher') {
+            filteredTypes = filteredTypes.filter(([id]) => id === EXPORT_TYPES.TEACHER_SCHEDULE);
+        } else if (userType === 'student') {
+            filteredTypes = filteredTypes.filter(([id]) => id === EXPORT_TYPES.STUDENT_SCHEDULE);
+        }
+
         const html = `
             <div id="exportDialogOverlay" class="export-dialog-overlay" style="display: none;">
                 <div id="exportDialog" class="export-dialog-container">
@@ -108,7 +119,7 @@ window.ExportDialog = (function () {
                         <div class="export-step-content active" data-step="1">
                             <h3>选择导出类型</h3>
                             <div class="export-type-selector">
-                                ${Object.entries(EXPORT_TYPE_CONFIG).map(([typeId, config]) => `
+                                ${filteredTypes.map(([typeId, config]) => `
                                     <label class="export-type-option" data-type="${typeId}">
                                         <input type="radio" name="exportType" value="${typeId}" style="display: none;">
                                         <div class="export-type-card">
@@ -1328,7 +1339,19 @@ window.ExportDialog = (function () {
             await new Promise(r => setTimeout(r, 300));
 
             // 调用导出 API
-            const response = await window.apiUtils.get(`/admin/export-advanced?${params.toString()}`);
+            // 调用导出 API
+            // 根据角色判断调用哪个接口
+            let apiUrl = `/admin/export-advanced?${params.toString()}`;
+            const currentUser = window.currentUser || {};
+            const userType = currentUser.userType || 'admin';
+
+            if (userType === 'teacher') {
+                apiUrl = `/api/teacher/export?${params.toString()}`;
+            } else if (userType === 'student') {
+                apiUrl = `/api/student/export?${params.toString()}`;
+            }
+
+            const response = await window.apiUtils.get(apiUrl);
 
 
             updateProgress(60, '正在生成文件...');
@@ -1342,15 +1365,51 @@ window.ExportDialog = (function () {
             const exportResult = response;
 
             // 5. 构建优化后的文件名
-            const nowStr = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12); // YYYYMMDDHHmm
-            let filename = `${typeConfig.label || '导出数据'}`;
+            // 5. 构建优化后的文件名
+            // 格式要求：
+            // 管理员: [教师/学生]授课记录指定时间[开始_结束]_当前[管理员名].xlsx
+            // 教师/学生: [姓名]授课记录[开始_结束]_当前.xlsx
 
-            if (typeConfig.requiresDateRange && state.startDate && state.endDate) {
+            const now = new Date();
+            const yyyyMMdd = now.toISOString().slice(0, 10).replace(/-/g, '');
+            const hhmmss = now.toTimeString().slice(0, 8).replace(/:/g, '');
+            const timestamp = `${yyyyMMdd}${hhmmss}`; // YYYYMMDDHHMMSS
+
+            let dateRangeStr = '';
+            if (state.startDate && state.endDate) {
                 const s = state.startDate.toISOString().split('T')[0].replace(/-/g, '');
                 const e = state.endDate.toISOString().split('T')[0].replace(/-/g, '');
-                filename += `_${s}-${e}`;
+                dateRangeStr = `[${s}_${e}]`;
             }
-            filename += `_${nowStr}.${format === EXPORT_FORMATS.EXCEL ? 'xlsx' : 'csv'}`;
+
+            let filename = '';
+
+            // 优先使用后端返回的文件名
+            if (exportResult && exportResult.filename) {
+                filename = exportResult.filename;
+            } else {
+                if (userType === 'admin') {
+                    // 管理员格式
+                    // 授课记录指定时间 -> 这里的 typeConfig.label 可能是 "教师授课记录" 或 "学生授课记录"
+                    // 去掉可能的 "导出" 字样，保持核心名词
+                    let coreName = typeConfig.label || '数据导出';
+                    // 如果是特定格式的需求，强制调整 coreName
+                    if (state.selectedType === EXPORT_TYPES.TEACHER_SCHEDULE) coreName = '教师授课记录指定时间';
+                    if (state.selectedType === EXPORT_TYPES.STUDENT_SCHEDULE) coreName = '学生授课记录指定时间';
+
+                    // 管理员名称使用 username
+                    const adminName = currentUser.username || currentUser.name || 'admin';
+                    filename = `${coreName}${dateRangeStr}_${timestamp}[${adminName}]`;
+                } else {
+                    // 教师/学生格式
+                    // [姓名]授课记录[开始_结束]_当前
+                    const myName = currentUser.name || currentUser.username || '用户';
+
+                    filename = `[${myName}]授课记录${dateRangeStr}_${timestamp}`;
+                }
+
+                filename += `.${format === EXPORT_FORMATS.EXCEL ? 'xlsx' : 'csv'}`;
+            }
 
             // 生成文件 - 传递 filename 参数
             // 兼容直接返回数组，或嵌套在 data.data 中的情况
@@ -1807,11 +1866,14 @@ window.ExportDialog = (function () {
                 return result;
             }
 
-            updateProgress(100, '导出完成！');
+            // 计算记录数用于显示
+            const recordCount = rawData.length || 0;
+
+            updateProgress(100, `导出完成！共 ${recordCount} 条记录`);
 
             // 显示成功信息
             setTimeout(() => {
-                showToast('导出成功', 'success');
+                showToast(`导出成功，共 ${recordCount} 条记录`, 'success');
                 // 延迟关闭对话框
                 setTimeout(() => {
                     close();
@@ -1820,9 +1882,35 @@ window.ExportDialog = (function () {
         } catch (error) {
             console.error('导出失败:', error);
             updateProgress(0, '导出失败');
+
+            // 显示错误提示并提供重试按钮
+            const progressMsg = document.getElementById('exportProgressMsg');
+            if (progressMsg) {
+                progressMsg.innerHTML = `
+                    <span style="color: #ef4444;">导出失败: ${error.message || '未知错误'}</span>
+                    <button onclick="window.ExportDialog.retryExport()" style="
+                        margin-left: 12px;
+                        padding: 4px 12px;
+                        background: #0ea5e9;
+                        color: white;
+                        border: none;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 12px;
+                    ">重试</button>
+                `;
+            }
             showToast(`导出失败: ${error.message}`, 'error');
             state.isExporting = false;
         }
+    }
+
+    /**
+     * 重试导出
+     */
+    function retryExport() {
+        state.isExporting = false;
+        performExport();
     }
 
     /**
@@ -2107,6 +2195,7 @@ window.ExportDialog = (function () {
         open,
         close,
         init,
+        retryExport,
         isOpen: () => state.isOpen,
         // 公开 applyDatePreset，供页面其它脚本调用以同步预设
         applyPreset: (preset) => {
