@@ -403,9 +403,11 @@ async function submitAvailabilityPayload(payload) {
 
         originalState = cloneState(availabilityState);
         showTimedFeedback('时间安排已保存', 'success');
+        alert('时间安排已保存');
     } catch (error) {
         console.error('保存时间安排失败', error);
         showInlineFeedback(elements.feedback(), '保存失败，请稍后重试', 'error');
+        alert('保存失败：' + (error.message || '未知错误'));
         throw error;
     } finally {
         if (actionButton) {

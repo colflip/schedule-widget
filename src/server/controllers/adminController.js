@@ -31,7 +31,7 @@ const adminController = {
                     break;
                 case 'teacher':
                     table = 'teachers';
-                    selectColumns = 'id, username, name, profession, contact, work_location, home_address, last_login, created_at';
+                    selectColumns = 'id, username, name, profession, contact, work_location, home_address, restriction, last_login, created_at';
                     break;
                 case 'student':
                     table = 'students';
@@ -101,7 +101,7 @@ const adminController = {
                     break;
                 case 'teacher':
                     table = 'teachers';
-                    selectColumns = 'id, username, name, profession, contact, work_location, home_address, last_login, created_at';
+                    selectColumns = 'id, username, name, profession, contact, work_location, home_address, restriction, last_login, created_at';
                     break;
                 case 'student':
                     table = 'students';
@@ -184,17 +184,15 @@ const adminController = {
                 }
             }
 
-            // 仅允许写入合法字段，避免前端携带无效字段导致 SQL 错误
             const allowedAdditionalByType = {
                 admin: ['permission_level'],
-                teacher: ['profession', 'contact', 'work_location', 'home_address', 'status'],
+                teacher: ['profession', 'contact', 'work_location', 'home_address', 'status', 'restriction'],
                 student: ['profession', 'contact', 'visit_location', 'home_address', 'status']
             };
             const allowedAdditional = allowedAdditionalByType[userType] || [];
             const filteredAdditional = Object.fromEntries(
                 Object.entries(additionalInfo).filter(([key]) => allowedAdditional.includes(key))
             );
-
             // 若教师/学生表不存在 status 列，则忽略该字段，防止 SQL 错误
             try {
                 if ((userType === 'teacher' || userType === 'student') && Object.prototype.hasOwnProperty.call(filteredAdditional, 'status')) {
@@ -307,10 +305,9 @@ const adminController = {
                 return res.status(404).json({ message: '用户不存在' });
             }
 
-            // 仅允许更新合法字段
             const allowedAdditionalByType = {
                 admin: ['permission_level'],
-                teacher: ['profession', 'contact', 'work_location', 'home_address', 'status'],
+                teacher: ['profession', 'contact', 'work_location', 'home_address', 'status', 'restriction'],
                 student: ['profession', 'contact', 'visit_location', 'home_address', 'status']
             };
             const allowedAdditional = allowedAdditionalByType[userType] || [];
@@ -508,12 +505,25 @@ const adminController = {
                 studentHasStatus = (sCols.rows || []).length > 0;
             } catch (_) { }
 
-            // 基础 SQL：关联教师与学生以便能够按账号状态过滤
+            // 基础 SQL：关联教师与学生以便能够按账号状态过滤，同时关联课程类型获取中文名称
             let sql = `
-                SELECT ca.id, ${dateExpr} AS date, ca.start_time, ca.end_time, ca.status, ca.teacher_id, ca.student_id, ca.course_id, ca.location
+                SELECT 
+                    ca.id, 
+                    ${dateExpr} AS date, 
+                    ca.start_time, 
+                    ca.end_time, 
+                    ca.status, 
+                    ca.teacher_id, 
+                    t.name AS teacher_name, 
+                    ca.student_id, 
+                    s.name AS student_name, 
+                    ca.course_id, 
+                    COALESCE(stt.description, stt.name) AS schedule_type_cn, 
+                    ca.location
                 FROM course_arrangement ca
                 JOIN teachers t ON ca.teacher_id = t.id
                 JOIN students s ON ca.student_id = s.id
+                LEFT JOIN schedule_types stt ON ca.course_id = stt.id
                 WHERE ${dateExpr} BETWEEN $1 AND $2
             `;
 
@@ -624,8 +634,10 @@ const adminController = {
                     s.name AS student_name,
                     t.id AS teacher_id,
                     t.name AS teacher_name,
+                    ca.course_id,
                     stt.name AS schedule_type,
                     COALESCE(stt.description, stt.name) AS schedule_types,
+                    COALESCE(stt.description, stt.name) AS schedule_type_cn,
                     ${dateExpr} AS date,
                     ca.start_time,
                     ca.end_time,
@@ -678,6 +690,132 @@ const adminController = {
             const msg = String(error?.message || '');
             const isNeonTimeout = code === 'UND_ERR_CONNECT_TIMEOUT' || msg.includes('fetch failed') || msg.includes('ETIMEDOUT');
             if (isNeonTimeout) return res.json([]);
+            res.status(500).json({ message: '服务器错误' });
+        }
+    },
+
+    /**
+     * 获取教师空闲时段网格数据
+     * @description 根据日期范围返回所有教师的空闲状态
+     * @param {string} req.query.startDate - 开始日期
+     * @param {string} req.query.endDate - 结束日期
+     */
+    async getTeacherAvailabilityGrid(req, res) {
+        try {
+            const { startDate, endDate } = req.query;
+            if (!startDate || !endDate) {
+                return res.status(400).json({ message: '缺少开始/结束日期' });
+            }
+
+            // 1. 获取所有教师（状态非删除）
+            let teacherSql = `SELECT id, name FROM teachers WHERE 1=1`;
+            try {
+                const tCols = await db.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='teachers' AND column_name='status'`);
+                if ((tCols.rows || []).length > 0) {
+                    teacherSql += ` AND status <> -1`;
+                }
+            } catch (_) { }
+            teacherSql += ` ORDER BY name ASC`;
+            const teachersResult = await db.query(teacherSql);
+            const teachers = teachersResult.rows || [];
+
+            // 2. 获取日期范围内的availability数据
+            const availabilitySql = `
+                SELECT teacher_id, date, morning_available, afternoon_available, evening_available
+                FROM teacher_daily_availability
+                WHERE date BETWEEN $1 AND $2
+            `;
+            const availabilityResult = await db.query(availabilitySql, [startDate, endDate]);
+            const availabilityRecords = availabilityResult.rows || [];
+
+            // 3. 组织数据结构：Map<TeacherId, Map<DateStr, SlotData>>
+            const availabilityMap = new Map();
+            availabilityRecords.forEach(record => {
+                const tId = record.teacher_id;
+                if (!availabilityMap.has(tId)) {
+                    availabilityMap.set(tId, {});
+                }
+                // 格式化日期 key (YYYY-MM-DD)
+                let dStr = record.date;
+                // 如果是 Date 对象，使用本地时间构建字符串，避免 toISOString() 带来的时区偏差
+                if (dStr instanceof Date) {
+                    const y = dStr.getFullYear();
+                    const m = String(dStr.getMonth() + 1).padStart(2, '0');
+                    const d = String(dStr.getDate()).padStart(2, '0');
+                    dStr = `${y}-${m}-${d}`;
+                } else if (typeof dStr === 'string') {
+                    dStr = dStr.substring(0, 10);
+                }
+
+                availabilityMap.get(tId)[dStr] = {
+                    morning: record.morning_available === 1,
+                    afternoon: record.afternoon_available === 1,
+                    evening: record.evening_available === 1
+                };
+            });
+
+            // 4. 构建最终返回列表
+            const result = teachers.map(t => ({
+                id: t.id,
+                name: t.name,
+                availability: availabilityMap.get(t.id) || {}
+            }));
+
+            res.json(result);
+        } catch (error) {
+            console.error('获取教师空闲网格错误:', error);
+            res.status(500).json({ message: '服务器错误' });
+        }
+    },
+
+    /**
+     * 更新教师空闲时段
+     * @param {object[]} req.body.updates - [{ teacher_id, date, morning, afternoon, evening }]
+     */
+    async updateTeacherAvailability(req, res) {
+        try {
+            const { updates } = req.body;
+            if (!Array.isArray(updates) || updates.length === 0) {
+                return res.status(400).json({ message: '缺少更新数据' });
+            }
+
+            // 使用事务进行批量更新
+            await db.runInTransaction(async (client, usePool) => {
+                const q = usePool ? db.query : client.query.bind(client);
+
+                for (const item of updates) {
+                    const { teacher_id, date, morning, afternoon, evening } = item;
+                    // 简单的参数校验
+                    if (!teacher_id || !date) continue;
+
+                    // 使用 UPSERT (PostgreSQL specific)
+                    // morning/afternoon/evening 应该是 0 或 1，如果 undefined 则保持原值或设为默认? 
+                    // 这里假设前端传过来的是完整的状态，或者只传变化的。
+                    // 为了健壮性，使用 COALESCE(EXCLUDED.col, col) 逻辑比较复杂，
+                    // 建议前端传确定的值 (0/1). 
+                    // SQL: INSERT INTO ... VALUES ... ON CONFLICT (teacher_id, date) DO UPDATE SET ...
+
+                    const mVal = morning ? 1 : 0;
+                    const aVal = afternoon ? 1 : 0;
+                    const eVal = evening ? 1 : 0;
+
+                    const sql = `
+                        INSERT INTO teacher_daily_availability (teacher_id, date, morning_available, afternoon_available, evening_available, start_time, end_time)
+                        VALUES ($1, $2, $3, $4, $5, '00:00', '23:59')
+                        ON CONFLICT (teacher_id, date) 
+                        DO UPDATE SET 
+                            morning_available = EXCLUDED.morning_available,
+                            afternoon_available = EXCLUDED.afternoon_available,
+                            evening_available = EXCLUDED.evening_available,
+                            updated_at = CURRENT_TIMESTAMP
+                    `;
+                    await q(sql, [teacher_id, date, mVal, aVal, eVal]);
+                }
+            });
+
+            res.json({ message: '更新成功' });
+        } catch (error) {
+            console.error('更新教师空闲时段错误:', error);
             res.status(500).json({ message: '服务器错误' });
         }
     },
@@ -878,9 +1016,9 @@ const adminController = {
                     throw stErr;
                 }
 
-                // 时间格式校验
+                // 时间格式校验 (兼容 HH:MM 和 HH:MM:SS)
                 function toMinutes(t) {
-                    const m = /^([0-2]?\d):([0-5]\d)$/.exec(String(t || ''));
+                    const m = /^([0-2]?\d):([0-5]\d)(?::([0-5]\d))?$/.exec(String(t || ''));
                     if (!m) return NaN;
                     return Number(m[1]) * 60 + Number(m[2]);
                 }
@@ -1362,7 +1500,7 @@ const adminController = {
         let startTime = Date.now();
 
         try {
-            const { type, format, startDate, endDate } = req.query;
+            const { type, format, startDate, endDate, ...filters } = req.query;
             const adminId = req.user?.id;
             const adminName = req.user?.name || '未知用户';
 
@@ -1398,7 +1536,7 @@ const adminController = {
 
             try {
                 // ===== 执行导出 =====
-                const result = await exportService.execute(type, format, startDate, endDate);
+                const result = await exportService.execute(type, format, startDate, endDate, filters);
 
                 // ===== 准备响应数据 =====
                 let responseData;

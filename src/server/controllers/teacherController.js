@@ -358,8 +358,8 @@ const teacherController = {
                     } else {
                         await q(
                             `INSERT INTO teacher_daily_availability
-                                 (teacher_id, date, morning_available, afternoon_available, evening_available, created_at, updated_at)
-                             VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+                                 (teacher_id, date, morning_available, afternoon_available, evening_available, start_time, end_time, created_at, updated_at)
+                             VALUES ($1, $2, $3, $4, $5, '00:00:00', '23:59:59', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
                             [req.user.id, date, nextValues.morning, nextValues.afternoon, nextValues.evening]
                         );
                         insertCount++;

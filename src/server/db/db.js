@@ -13,9 +13,9 @@ let getClient;
 if (preferServerless) {
   // 通过 443 端口的 HTTPS/WebSocket 连接 Neon，绕过 5432 端口限制
   const { neon, neonConfig } = require('@neondatabase/serverless');
-  // 在某些网络环境下，强制安全 WebSocket 可提升兼容性
-  neonConfig.useSecureWebSocket = true;
-  neonConfig.fetchConnectionCache = true;
+  // 在某些网络环境下，移除强制配置可能提升稳定性
+  // neonConfig.useSecureWebSocket = true; 
+  // neonConfig.fetchConnectionCache = true; // Deprecated
   const sql = neon(connectionString);
 
   // 使用 neon 的常规函数调用：sql.query("SELECT $1", [param])，返回对象包含 rows

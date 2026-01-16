@@ -19,6 +19,8 @@ router.delete('/users/:userType/:id', authMiddleware, adminOnly, adminController
 
 // 排课管理路由
 router.get('/schedules', authMiddleware, adminOnly, validate(scheduleValidation.query, 'query'), adminController.getSchedules);
+router.get('/teacher-availability', authMiddleware, adminOnly, adminController.getTeacherAvailabilityGrid);
+router.post('/teacher-availability', authMiddleware, adminOnly, adminController.updateTeacherAvailability);
 // 放在 :id 之前，避免被动态参数匹配到
 router.get('/schedules/grid', authMiddleware, adminOnly, adminController.getSchedulesGrid);
 // 仅匹配数字ID，避免 'grid' 等字符串被当作ID

@@ -107,8 +107,12 @@ window.ScheduleTypesStore = ScheduleTypesStore;
 
 // 周视图数据缓存（学生与排课，含TTL）
 const WeeklyDataStore = {
-    ttlMs: 2 * 60 * 1000, // 2分钟缓存TTL
+    ttlMs: 5 * 60 * 1000, // 5分钟缓存TTL
     students: {
+        list: [],
+        loadedAt: 0
+    },
+    teachers: {
         list: [],
         loadedAt: 0
     },
@@ -123,36 +127,33 @@ const WeeklyDataStore = {
         return window.apiUtils.get('/admin/users/student')
             .then(resp => {
                 const list = Array.isArray(resp) ? resp : (resp && Array.isArray(resp.data) ? resp.data : []);
-                // 排序：状态优先（1 正常，0 暂停，-1 删除），同状态按姓名
-                const weight = (v) => {
-                    const n = Number(v);
-                    if (n === 1) return 0;
-                    if (n === 0) return 1;
-                    if (n === -1) return 2;
-                    return 3;
-                };
-                const filtered = (list || []).filter(s => Number(s?.status) !== -1);
-                const sorted = [...filtered].sort((a, b) => {
-                    const wa = weight(a?.status);
-                    const wb = weight(b?.status);
-                    if (wa !== wb) return wa - wb;
-                    return String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-CN');
-                });
-                this.students.list = sorted;
+                this.students.list = list;
                 this.students.loadedAt = Date.now();
-                return sorted;
-            })
-            .catch(err => {
-                console.warn('获取学生列表失败，使用默认列表:', err);
-                // 返回默认学生列表用于开发测试
-                const defaultStudents = [
-                    { id: 1, name: '学生A' },
-                    { id: 2, name: '学生B' },
-                    { id: 3, name: '学生C' },
-                    { id: 4, name: '学生D' },
-                    { id: 5, name: '学生E' }
-                ];
-                return defaultStudents;
+                return list;
+            });
+    },
+    getTeachers(force = false) {
+        if (!force && this._isFresh(this.teachers.loadedAt) && this.teachers.list.length) {
+            return Promise.resolve(this.teachers.list);
+        }
+        return window.apiUtils.get('/admin/users/teacher')
+            .then(resp => {
+                let list = [];
+                // 兼容多种返回格式
+                if (Array.isArray(resp)) {
+                    list = resp;
+                } else if (resp && Array.isArray(resp.data)) {
+                    list = resp.data;
+                } else if (resp && Array.isArray(resp.teachers)) {
+                    list = resp.teachers;
+                } else if (resp && Array.isArray(resp.items)) {
+                    list = resp.items;
+                } else if (resp && resp.data && Array.isArray(resp.data.teachers)) {
+                    list = resp.data.teachers;
+                }
+                this.teachers.list = list;
+                this.teachers.loadedAt = Date.now();
+                return list;
             });
     },
     getSchedules(startDate, endDate, status, type, teacherId, force = false) {
@@ -165,8 +166,9 @@ const WeeklyDataStore = {
         if (startDate) params.start_date = startDate;
         if (endDate) params.end_date = endDate;
         if (status) params.status = status;
-        if (type) params.type_id = type;
+        if (type) params.course_id = type; // Ensure param matches backend
         if (teacherId) params.teacher_id = teacherId;
+
         // 使用逐条记录的网格接口，确保 student_id 精确映射
         return window.apiUtils.get('/admin/schedules/grid', params)
             .then(rows => {
@@ -178,6 +180,9 @@ const WeeklyDataStore = {
                 console.warn('获取排课失败，使用空列表:', err);
                 return [];
             });
+    },
+    invalidateSchedules() {
+        this.schedules.clear();
     }
 };
 window.WeeklyDataStore = WeeklyDataStore;
@@ -289,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // 用户列表字段映射（用于动态渲染表头与数据列，隐藏 ID）
 const USER_FIELDS = {
     admin: ['username', 'name', 'email', 'permission_level', 'last_login', 'created_at'],
-    teacher: ['username', 'name', 'profession', 'contact', 'work_location', 'home_address', 'status', 'last_login', 'created_at'],
+    teacher: ['username', 'name', 'profession', 'contact', 'work_location', 'home_address', 'restriction', 'status', 'last_login', 'created_at'],
     student: ['username', 'name', 'profession', 'contact', 'visit_location', 'home_address', 'status', 'last_login', 'created_at']
 };
 
@@ -305,6 +310,8 @@ const FIELD_LABELS = {
     work_location: '工作地点',
     home_address: '家庭地址',
     visit_location: '入户地点',
+    visit_location: '入户地点',
+    restriction: '限制',
     status: '状态'
 };
 
@@ -342,7 +349,9 @@ function setupNavigation() {
                     } else if (section === 'schedule') {
                         await loadSchedules();
                     } else if (section === 'statistics') {
-                        await loadStatistics();
+                        // handled by showSection -> loadStatistics
+                    } else if (section === 'availability') {
+                        initTeacherAvailability(); // Ensure init calls are idempotent or just check logic
                     }
                 } catch (_) { }
                 showSection(section);
@@ -663,6 +672,10 @@ function setupEventListeners() {
                 if (homeAddressInput && homeAddressInput.value) body.home_address = homeAddressInput.value.trim();
                 if (type === 'teacher') {
                     if (workLocationInput && workLocationInput.value) body.work_location = workLocationInput.value.trim();
+                    const restrictionSelect = document.getElementById('userRestriction');
+                    if (restrictionSelect) {
+                        body.restriction = parseInt(restrictionSelect.value, 10);
+                    }
                 } else if (type === 'student') {
                     if (visitLocationInput && visitLocationInput.value) body.visit_location = visitLocationInput.value.trim();
                 }
@@ -1399,25 +1412,54 @@ function initializeStatisticsTabs() {
     const teacherEl = document.getElementById('statsTeacher');
     const studentEl = document.getElementById('statsStudent');
     if (!tabBtns.length || !overviewEl || !teacherEl || !studentEl) return;
+
     const showView = (view) => {
-        // 使用 active 类控制可见性，避免内联样式与 CSS 冲突
-        overviewEl.classList.toggle('active', view === 'overview');
-        teacherEl.classList.toggle('active', view === 'teacher');
-        studentEl.classList.toggle('active', view === 'student');
-        // 同步移除内联 display 样式，确保 class 生效
-        overviewEl.style.display = '';
-        teacherEl.style.display = '';
-        studentEl.style.display = '';
-        loadStatistics();
+        const currentActive = document.querySelector('.stats-view.active');
+        const nextActive = view === 'overview' ? overviewEl : (view === 'teacher' ? teacherEl : studentEl);
+
+        if (currentActive === nextActive) return;
+
+        const fadeIn = (el) => {
+            el.style.display = 'block';
+            el.style.opacity = '0';
+            // 强制重绘
+            void el.offsetWidth;
+            el.classList.add('active');
+            el.style.opacity = '';
+            el.style.display = '';
+        };
+
+        if (currentActive) {
+            currentActive.classList.add('fade-out');
+            setTimeout(() => {
+                currentActive.classList.remove('active', 'fade-out');
+                fadeIn(nextActive);
+                loadStatistics();
+            }, 300);
+        } else {
+            fadeIn(nextActive);
+            loadStatistics();
+        }
     };
+
     tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             tabBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            showView(btn.dataset.view);
+            // 获取 dataset.view，若无则默认为 overview
+            const view = btn.dataset.view || 'overview';
+            showView(view);
         });
     });
-    showView('overview');
+
+    // 初始化显示（不带动画，避免首屏闪烁）
+    // showView('overview'); 
+    // 上面 showView 会触发 loadStatistics，但我们需要首屏直接显示
+    // 手动设置 overview active
+    if (!document.querySelector('.stats-view.active')) {
+        overviewEl.classList.add('active');
+        loadStatistics();
+    }
 }
 
 function getStatisticsActiveView() {
@@ -1451,70 +1493,98 @@ async function loadStatistics() {
             statsFeedback.style.display = 'block';
         }
 
+        const overviewContainer = document.getElementById('statsOverview');
+        if (overviewContainer) overviewContainer.classList.add('stats-loading');
+
         const activeView = getStatisticsActiveView();
 
         // 概览视图：饼图 + 教师/学生堆叠横向柱
         if (activeView === 'overview') {
+            let loadingOverlay = null;
             try {
+                // Show Loading Overlay
+                if (overviewContainer) {
+                    const chartsSection = overviewContainer.querySelector('.charts-section');
+                    if (chartsSection) {
+                        loadingOverlay = document.createElement('div');
+                        loadingOverlay.className = 'stats-loading-overlay';
+                        loadingOverlay.innerHTML = `
+                            <div class="loading-spinner"></div>
+                            <div class="loading-text">正在加载数据...</div>
+                        `;
+                        chartsSection.appendChild(loadingOverlay);
+                    }
+                }
+
+                // Reset animations for overview charts
+                const chartContainers = document.querySelectorAll('#statsOverview .charts-section .chart-container');
+                chartContainers.forEach(el => {
+                    el.classList.remove('chart-anim-active');
+                    el.classList.add('chart-anim-enter');
+                });
+
+                // Parallel execution for faster loading
                 let scheduleStats = null;
+                let teacherStack = null;
+                let studentStack = null;
+
                 try {
-                    scheduleStats = await window.apiUtils.get('/admin/statistics/schedules', { startDate, endDate });
-                } catch (apiError) {
-                    console.warn('加载排课统计数据失败:', apiError);
-                    // 使用默认数据
-                    scheduleStats = getDefaultScheduleStats();
+                    // 1. Define promises
+                    const p1 = window.apiUtils.get('/admin/statistics/schedules', { startDate, endDate })
+                        .catch(err => { console.warn('加载排课统计失败', err); return getDefaultScheduleStats(); });
+
+                    const p2 = fetchSchedulesRange(startDate, endDate, '', '')
+                        .then(raw => {
+                            // Process teacher stack immediately after fetch
+                            try { return { raw, stack: buildTeacherTypeStack(raw) }; }
+                            catch (e) { console.warn('处理教师数据失败', e); return { raw, stack: getDefaultTeacherStack() }; }
+                        })
+                        .catch(err => { console.warn('加载排课明细失败', err); return { raw: getDefaultSchedules(), stack: getDefaultTeacherStack() }; });
+
+                    const p3 = fetchStudentsForWeekly()
+                        .catch(err => { console.warn('加载学生列表失败', err); return [{ id: 1, name: '学生A' }]; }); // Simple fallback
+
+                    // 2. Await all
+                    const [statsData, schedulesData, studentsData] = await Promise.all([p1, p2, p3]);
+
+                    // 3. Assign
+                    scheduleStats = statsData;
+                    const { raw: rawSchedules, stack: tStack } = schedulesData;
+
+                    // Process student stack (needs both schedules and students)
+                    let sStack;
+                    try {
+                        sStack = buildStudentTypeStack(rawSchedules, studentsData);
+                    } catch (e) {
+                        console.warn('处理学生数据失败', e); sStack = getDefaultStudentStack();
+                    }
+
+                    // 4. Render
+                    renderScheduleTypeChart(scheduleStats);
+                    renderTeacherTypeStackedChart(tStack);
+                    renderStudentTypeStackedChart(sStack);
+
+                    // 5. Trigger animations
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            chartContainers.forEach(el => el.classList.add('chart-anim-active'));
+                        });
+                    });
+
+                } catch (generalError) {
+                    console.error('统计页面并发加载异常:', generalError);
                 }
-                renderScheduleTypeChart(scheduleStats);
-            } catch (renderError) {
-                console.error('渲染排课统计图表失败:', renderError);
-            }
 
-            let rawSchedules = [];
-            try {
-                rawSchedules = await fetchSchedulesRange(startDate, endDate, '', '');
-            } catch (apiError) {
-                console.warn('加载排课数据失败:', apiError);
-                // 使用默认数据
-                rawSchedules = getDefaultSchedules();
+                // Hide feedback if present (legacy)
+                if (overviewContainer) overviewContainer.classList.remove('stats-loading');
+                if (statsFeedback) statsFeedback.style.display = 'none';
+                if (loadingOverlay) loadingOverlay.remove();
+                return;
+            } catch (overviewError) {
+                console.error('概览统计加载失败:', overviewError);
+                // Fallthrough to global catch if needed, or handle locally
+                throw overviewError;
             }
-
-            try {
-                const teacherStack = buildTeacherTypeStack(rawSchedules);
-                renderTeacherTypeStackedChart(teacherStack);
-            } catch (apiError) {
-                console.warn('加载教师统计数据失败:', apiError);
-                // 使用默认数据进行渲染
-                renderTeacherTypeStackedChart(getDefaultTeacherStack());
-            }
-
-            try {
-                let students = [];
-                try {
-                    students = await fetchStudentsForWeekly();
-                } catch (apiError) {
-                    console.warn('加载学生数据失败:', apiError);
-                    // 使用默认学生数据
-                    students = [
-                        { id: 1, name: '学生A' },
-                        { id: 2, name: '学生B' },
-                        { id: 3, name: '学生C' },
-                        { id: 4, name: '学生D' },
-                        { id: 5, name: '学生E' }
-                    ];
-                }
-                const studentStack = buildStudentTypeStack(rawSchedules, students);
-                renderStudentTypeStackedChart(studentStack);
-            } catch (apiError) {
-                console.warn('加载学生统计数据失败:', apiError);
-                // 使用默认数据进行渲染
-                renderStudentTypeStackedChart(getDefaultStudentStack());
-            }
-
-            // 隐藏反馈
-            if (statsFeedback) {
-                statsFeedback.style.display = 'none';
-            }
-            return;
         }
 
         // 教师/学生统计视图：时间轴折线 + 每日类型堆叠柱
@@ -1534,7 +1604,7 @@ async function loadStatistics() {
         if (activeView === 'teacher') {
             if (window.StatsPlugins) {
                 const typeStacks = window.StatsPlugins.buildStackedByTypePerDay(rawSchedules, dayLabels);
-                window.StatsPlugins.renderStackedBarChart('teacherDailyTypeStackChart', dayLabels, typeStacks, { theme: 'accessible', animation: false, interactionMode: 'index' });
+                window.StatsPlugins.renderStackedBarChart('teacherDailyTypeStackChart', dayLabels, typeStacks, { theme: 'accessible', interactionMode: 'index' });
                 // 设置汇总图表标题的悬停提示
                 setupSummaryChartTitleTooltip(rawSchedules);
             }
@@ -1557,7 +1627,7 @@ async function loadStatistics() {
         if (activeView === 'student') {
             if (window.StatsPlugins) {
                 const typeStacks = window.StatsPlugins.buildStackedByTypePerDay(rawSchedules, dayLabels);
-                window.StatsPlugins.renderStackedBarChart('studentDailyTypeStackChart', dayLabels, typeStacks, { theme: 'accessible', animation: false, interactionMode: 'index' });
+                window.StatsPlugins.renderStackedBarChart('studentDailyTypeStackChart', dayLabels, typeStacks, { theme: 'accessible', interactionMode: 'index' });
                 // 设置汇总图表标题的悬停提示
                 setupStudentSummaryChartTitleTooltip(rawSchedules);
             }
@@ -1575,7 +1645,13 @@ async function loadStatistics() {
             }
             return;
         }
+
+        // Fallback for unexpected activeView value
+        if (statsFeedback) statsFeedback.style.display = 'none';
+
     } catch (error) {
+        const overviewContainer = document.getElementById('statsOverview');
+        if (overviewContainer) overviewContainer.classList.remove('stats-loading');
         console.error('加载统计数据错误:', error);
 
         // 显示错误反馈
@@ -1599,7 +1675,8 @@ function getDefaultScheduleStats() {
             { type: '入户', count: 45 },
             { type: '试教', count: 32 },
             { type: '评审', count: 18 },
-            { type: '心理咨询', count: 12 },
+            { type: '咨询', count: 12 },
+
             { type: '线上辅导', count: 28 }
         ]
     };
@@ -2234,15 +2311,13 @@ function formatYearMonth(date) {
 }
 
 function formatDayLabel(date) {
-    const dd = new Intl.DateTimeFormat('zh-CN', {
-        timeZone: TIME_ZONE,
-        day: '2-digit'
-    }).format(date);
-    const weekday = new Intl.DateTimeFormat('zh-CN', {
-        timeZone: TIME_ZONE,
-        weekday: 'short'
-    }).format(date);
-    return `${dd}/${weekday}`;
+    const d = (date instanceof Date) ? date : new Date(date);
+    const dayNames = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+    const weekday = dayNames[d.getDay()];
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    // 返回 HTML 字符串：两行显示
+    return `<div style="line-height:1.4;"><div style="font-size:14px;color:#334155;font-weight:600;">${m}月${dd}日</div><div style="font-size:12px;color:#64748b;">${weekday}</div></div>`;
 }
 
 function formatYMD(date) {
@@ -2339,11 +2414,13 @@ function normalizeScheduleRows(rows) {
         const teacherName = r.teacher_name || r.teacherName || '';
         // 类型映射：优先通过 course_id/type_id/schedule_type_id 映射到描述
         const typeId = (r.course_id ?? r.type_id ?? r.schedule_type_id);
-        let typeText = r.schedule_types || r.schedule_type || r.type_name || '';
+        // 优先使用后端传回的中文名 schedule_type_cn
+        let typeText = r.schedule_type_cn || r.schedule_types || r.schedule_type || r.type_name || '';
         try {
             if (typeId != null && window.ScheduleTypesStore && typeof window.ScheduleTypesStore.getById === 'function') {
                 const info = window.ScheduleTypesStore.getById(typeId);
-                if (info) {
+                // 如果后端没返回中文名，或者Store里有更准确的
+                if (info && !r.schedule_type_cn) {
                     typeText = (info.description || info.name || typeText || '未分类');
                 }
             }
@@ -2357,6 +2434,7 @@ function normalizeScheduleRows(rows) {
             teacher_name: teacherName,
             course_id: (typeId != null ? Number(typeId) : undefined),
             schedule_types: typeText,
+            schedule_type_cn: r.schedule_type_cn, // 显式传递
             date: dateISO,
             start_time: start,
             end_time: end,
@@ -2447,184 +2525,434 @@ function buildMergedRowText(group) {
 
     const locations = Array.from(new Set(group.records.map(r => (r.location || '').trim()).filter(Boolean)));
     const locationText = locations.join(' / ') || '地点待定';
-
     return `${peopleText}，${timeText}，${locationText}`;
 }
 
 function renderGroupedMergedSlots(td, items, student, dateKey) {
-    const detailed = items.map(s => ({
-        ...s,
-        startMin: hhmmToMinutes(s.start_time),
-        endMin: hhmmToMinutes(s.end_time),
-        slotKey: computeSlotByStartMin(hhmmToMinutes(s.start_time))
-    }));
-
-    const slotOrder = ['morning', 'afternoon', 'evening'];
-    slotOrder.forEach(slot => {
-        const slotItems = detailed.filter(x => x.slotKey === slot);
-        if (!slotItems.length) return;
-        const clusters = clusterByOverlap(slotItems);
-        const groupDiv = document.createElement('div');
-        groupDiv.classList.add('slot-group', `slot-${slot}`);
-        clusters.forEach(group => {
-            // 状态分组：保持合并行摘要文本，但按不同状态拆分为独立行，以应用不同风格
-            const byStatus = new Map();
-            (group.records || []).forEach(rec => {
-                const key = String(rec.status || 'pending').trim();
-                if (!byStatus.has(key)) byStatus.set(key, []);
-                byStatus.get(key).push(rec);
-            });
-            const statusClassOf = (s = '') => {
-                const v = String(s || '').trim();
-                if (v === 'pending') return 'status-pending';
-                if (v === 'confirmed') return 'status-confirmed';
-                if (v === 'completed') return 'status-completed';
-                if (v === 'cancelled') return 'status-cancelled';
-                return '';
-            };
-            for (const [statusKey, recs] of byStatus.entries()) {
-                const sub = {
-                    records: recs,
-                    minStart: Math.min(...recs.map(r => r.startMin).filter(Number.isFinite)),
-                    maxEnd: Math.max(...recs.map(r => r.endMin).filter(Number.isFinite))
-                };
-                const row = document.createElement('div');
-                row.classList.add('slot-row');
-                // 依据时间段为卡片赋予时段样式（背景色由时段决定）
-                row.classList.add(`slot-${slot}`);
-                const sClass = statusClassOf(statusKey);
-                if (sClass) row.classList.add(sClass);
-                // 构建文本摘要
-                row.textContent = buildMergedRowText(sub);
-                // 添加内部状态chip
-                const chip = document.createElement('span');
-                chip.classList.add('chip', sClass);
-                chip.textContent = getStatusText(statusKey);
-                row.appendChild(chip);
-                row.title = row.textContent;
-                row.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    try {
-                        const records = Array.isArray(recs) ? recs : [];
-                        if (records.length === 0) {
-                            openCellEditor({ id: student.id, name: student.name }, dateKey);
-                            return;
-                        }
-                        if (records.length === 1) {
-                            if (records[0] && records[0].id) {
-                                editSchedule(records[0].id);
-                            }
-                            return;
-                        }
-                        // 多条记录：仅展示该状态下的选择器
-                        const picker = document.createElement('div');
-                        picker.classList.add('group-picker');
-                        const typeClassOf = (name = '') => {
-                            const n = String(name || '').trim();
-                            if (n === '入户' || n === 'visit') return 'type-visit';
-                            if (n === '试教' || n === 'trial') return 'type-trial';
-                            if (n === '评审' || n === 'review') return 'type-review';
-                            if (n === '评审记录' || n === 'review_record') return 'type-review-record';
-                            if (n === '半次入户' || n === 'half_visit') return 'type-half-visit';
-                            if (n === '集体活动' || n === 'group_activity') return 'type-group-activity';
-                            return 'type-default';
-                        };
-                        const statusClassOfItem = (s = '') => {
-                            const v = String(s || '').trim();
-                            if (v === 'pending') return 'status-pending';
-                            if (v === 'confirmed') return 'status-confirmed';
-                            if (v === 'completed') return 'status-completed';
-                            if (v === 'cancelled') return 'status-cancelled';
-                            return '';
-                        };
-                        records.forEach(rec => {
-                            const item = document.createElement('div');
-                            item.classList.add('group-picker-item');
-                            // 依据时间段为卡片赋予时段样式（背景色由时段决定）
-                            item.classList.add(`slot-${slot}`);
-                            const teacher = rec.teacher_name || '待分配';
-                            const typeText = rec.schedule_types || rec.schedule_type || '未分类';
-                            const timeText = `${formatTime(rec.start_time)}-${formatTime(rec.end_time)}`;
-                            const locText = (rec.location || '').trim();
-                            // 组装内部内容
-                            const teacherSpan = document.createElement('span');
-                            teacherSpan.textContent = teacher;
-                            const typeChip = document.createElement('span');
-                            typeChip.classList.add('chip');
-                            const tClass = typeClassOf(typeText);
-                            if (tClass) typeChip.classList.add(tClass.replace('type-', 'type-'));
-                            typeChip.textContent = typeText;
-                            const statusChip = document.createElement('span');
-                            const sClassItem = statusClassOfItem(rec.status);
-                            statusChip.classList.add('chip');
-                            if (sClassItem) statusChip.classList.add(sClassItem);
-                            statusChip.textContent = getStatusText(rec.status || 'pending');
-                            const timeSpan = document.createElement('span');
-                            timeSpan.textContent = ` ${timeText}`;
-                            const locSpan = document.createElement('span');
-                            locSpan.textContent = locText ? ` ${locText}` : '';
-                            item.appendChild(teacherSpan);
-                            item.appendChild(typeChip);
-                            item.appendChild(statusChip);
-                            item.appendChild(timeSpan);
-                            if (locText) item.appendChild(locSpan);
-                            item.addEventListener('click', (ev) => {
-                                ev.stopPropagation();
-                                try { if (rec && rec.id) { editSchedule(rec.id); } } catch (_) { }
-                                try { picker.remove(); } catch (_) { }
-                            });
-                            picker.appendChild(item);
-                        });
-                        const closeBtn = document.createElement('div');
-                        closeBtn.classList.add('group-picker-close');
-                        closeBtn.textContent = '关闭';
-                        closeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); try { picker.remove(); } catch (_) { } });
-                        picker.appendChild(closeBtn);
-                        groupDiv.appendChild(picker);
-                    } catch (_) { }
-                });
-                groupDiv.appendChild(row);
+    // 注入样式（确保只注入一次）
+    if (!document.getElementById('admin-student-style-card')) {
+        const style = document.createElement('style');
+        style.id = 'admin-student-style-card';
+        style.textContent = `
+            .schedule-card-group {
+                background: #fff;
+                border-radius: 8px;
+                border: 1px solid; /* 使用元素自身的 border-color (由 bg- classes 定义) */
+                margin-bottom: 8px;
+                overflow: hidden;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                transition: all 0.2s ease-in-out;
+                position: relative;
             }
-        });
-        td.appendChild(groupDiv);
+            .schedule-card-group:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 16px rgba(0,0,0,0.08); /* 更深邃的阴影 */
+                border-color: var(--hover-border) !important; /* 聚焦时显示深色边框 */
+            }
+            /* 背景色变体 (基于时间段) - 更加深颜色以贴近学生端风格 */
+            /* 背景色变体 (基于时间段) - 更加深颜色以贴近学生端风格 */
+            /* 上午 (蓝) - #bfdbfe (Tailwind blue-200) */
+            .bg-morning { 
+                background-color: #bfdbfe; 
+                border-color: #93c5fd; /* Default border: blue-300 */
+                --hover-border: #2563eb; /* Hover border: blue-600 */
+            }
+            /* 下午 (黄) - #fde68a (Tailwind amber-200) */
+            .bg-afternoon { 
+                background-color: #fde68a; 
+                border-color: #fcd34d; /* Default border: amber-300 */
+                --hover-border: #d97706; /* Hover border: amber-600 */
+            }
+            /* 晚上 (紫) - #e9d5ff (Tailwind purple-200) */
+            .bg-evening { 
+                background-color: #e9d5ff; 
+                border-color: #d8b4fe; /* Default border: purple-300 */
+                --hover-border: #9333ea; /* Hover border: purple-600 */
+            }
+            /* 默认 */
+            .bg-default { 
+                background-color: #e2e8f0; 
+                border-color: #cbd5e1; /* Default border: slate-300 */
+                --hover-border: #475569; /* Hover border: slate-600 */
+            }
+
+            .schedule-list {
+                padding: 8px 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+                background-color: rgba(255, 255, 255, 0.5); /* 增加列表区域可读性 */
+            }
+            .schedule-row {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                font-size: 13px;
+                padding: 2px 0;
+                cursor: pointer;
+            }
+            .schedule-row:hover .teacher-name {
+                text-decoration: underline;
+                color: #2563eb;
+            }
+            .row-left {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex: 1;
+                min-width: 0;
+            }
+            .teacher-name {
+                font-weight: 600;
+                color: #1e293b;
+                white-space: nowrap;
+            }
+            .course-type-inline {
+                font-size: 11px; /* 减小字号 */
+                color: #94a3b8;  /* 灰色系 (Tailwind slate-400) */
+                margin-left: 2px;
+                font-weight: normal;
+            }
+            
+            /* 表格列宽自适应优化 */
+            #weeklyScheduleTable th, #weeklyScheduleTable td {
+                min-width: 150px; /* 确保最小宽度，防止挤压 */
+                max-width: 200px; /* 避免过宽 */
+                white-space: normal; /* 允许换行 */
+                vertical-align: top;
+            }
+            #weeklyScheduleTable .sticky-col {
+                min-width: 100px;
+                width: 100px;
+                position: sticky;
+                left: 0;
+                z-index: 10;
+                background: #f8fafc;
+                border-right: 1px solid #e2e8f0;
+            }
+
+            /* Status Badge */
+            .status-badge-sm {
+                font-size: 11px;
+                padding: 1px 6px;
+                border-radius: 4px;
+                white-space: nowrap;
+                font-weight: 500;
+                cursor: pointer; /* Clickable */
+                transition: opacity 0.2s;
+            }
+            .status-badge-sm:hover {
+                opacity: 0.8;
+                box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+            }
+            .status-badge-sm.confirmed { background: #dcfce7; color: #166534; }
+            .status-badge-sm.pending { background: #fff7ed; color: #9a3412; }
+            .status-badge-sm.completed { background: #e2e8f0; color: #475569; }
+            .status-badge-sm.cancelled { background: #fee2e2; color: #991b1b; }
+
+            .schedule-divider {
+                height: 1px;
+                background-color: rgba(0,0,0,0.06);
+                margin: 0 8px;
+            }
+
+            .schedule-footer {
+                padding: 8px 10px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 2px;
+                font-size: 12px;
+                color: #475569;
+                background-color: rgba(255,255,255,0.4); /* 轻微透明叠加 */
+            }
+            .time-range {
+                font-weight: 600;
+                font-size: 13px;
+                color: #334155;
+            }
+            .location-text {
+                text-align: center;
+                line-height: 1.3;
+                opacity: 0.9;
+            }
+
+            /* Status Popup Menu */
+            .status-popup-menu {
+                position: absolute;
+                background: white;
+                border: 1px solid #e2e8f0;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                border-radius: 6px;
+                padding: 4px;
+                z-index: 50;
+                display: flex;
+                flex-direction: column;
+                min-width: 80px;
+            }
+            .status-popup-item {
+                padding: 8px 12px; /* 增加点击区域 */
+                font-size: 13px;
+                color: #334155;
+                cursor: pointer;
+                border-radius: 4px;
+                text-align: left;
+                display: flex;
+                align-items: center;
+                gap: 8px; /* 图标间距 */
+                transition: all 0.2s;
+            }
+            .status-popup-item:hover {
+                background-color: #f8fafc;
+                color: #2563eb;
+            }
+            .status-popup-item.current {
+                font-weight: 600;
+                color: #2563eb;
+                background-color: #eff6ff;
+            }
+            .status-item-icon {
+                font-size: 16px;
+                width: 16px; 
+                height: 16px;
+                display: inline-block;
+                vertical-align: middle;
+            }
+            /* 状态颜色点用于下拉菜单 */
+            .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                display: inline-block;
+            }
+            .status-dot.pending { background: #f97316; }
+            .status-dot.confirmed { background: #10b981; }
+            .status-dot.completed { background: #64748b; }
+            .status-dot.cancelled { background: #ef4444; }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 1. 聚合逻辑：按 start_time|end_time|location 分组
+    const groups = new Map();
+    items.forEach(item => {
+        const loc = (item.location || '').trim();
+        const start = item.start_time ? item.start_time.substring(0, 5) : '';
+        const end = item.end_time ? item.end_time.substring(0, 5) : '';
+        const key = `${start}|${end}|${loc}`;
+
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
     });
 
-    const unknownItems = detailed.filter(x => x.slotKey === 'unspecified');
-    if (unknownItems.length) {
-        const groupDiv = document.createElement('div');
-        groupDiv.classList.add('slot-group', 'slot-unspecified');
+    // 2. 排序：按开始时间
+    const sortedGroups = Array.from(groups.values()).sort((a, b) => {
+        return (a[0].start_time || '').localeCompare(b[0].start_time || '');
+    });
+
+    // 3. 渲染
+    sortedGroups.forEach(group => {
+        const card = buildAdminScheduleCard(group, student, dateKey);
+        td.appendChild(card);
+    });
+}
+
+function buildAdminScheduleCard(group, student, dateKey) {
+    if (!group || group.length === 0) return document.createElement('div');
+    const first = group[0];
+
+    // 确定卡片背景色：根据时间段决定
+    // 上午 < 12:00, 下午 12:00-18:00, 晚上 >= 18:00
+    let bgClass = 'bg-default';
+    const startHour = parseInt((first.start_time || '00:00').substring(0, 2), 10);
+
+    if (startHour < 12) {
+        bgClass = 'bg-morning'; // 蓝色
+    } else if (startHour < 18) {
+        bgClass = 'bg-afternoon'; // 黄色
+    } else {
+        bgClass = 'bg-evening'; // 紫色
+    }
+
+    const card = document.createElement('div');
+    card.classList.add('schedule-card-group', bgClass);
+
+    // --- List Section (Rows) ---
+    const listDiv = document.createElement('div');
+    listDiv.classList.add('schedule-list');
+
+    group.forEach(rec => {
         const row = document.createElement('div');
-        row.classList.add('slot-row');
-        row.textContent = `${unknownItems.length} 条记录（时间待定）`;
-        row.title = row.textContent;
-        row.addEventListener('click', (e) => {
-            e.stopPropagation();
-            // 展示选择器
-            const picker = document.createElement('div');
-            picker.classList.add('group-picker');
-            unknownItems.forEach(rec => {
+        row.classList.add('schedule-row');
+        row.title = '点击修改此排课状态或信息';
+
+        // 左侧：教师名 + 课程类型
+        const left = document.createElement('div');
+        left.classList.add('row-left');
+
+        const teacher = document.createElement('span');
+        teacher.classList.add('teacher-name');
+        teacher.textContent = rec.teacher_name || '未分配';
+        left.appendChild(teacher);
+
+        const tType = rec.schedule_type_cn || rec.schedule_type || '未分配';
+        if (tType) {
+            const typeSpan = document.createElement('span');
+            typeSpan.classList.add('course-type-inline');
+            typeSpan.textContent = `(${tType})`;
+            left.appendChild(typeSpan);
+        }
+
+        row.appendChild(left);
+
+        row.appendChild(left);
+
+        // 右侧：状态 Badge (Clickable)
+        const status = (rec.status || 'pending').toLowerCase();
+        const statusBadge = document.createElement('span');
+        statusBadge.classList.add('status-badge-sm', status);
+        const statusMap = { 'pending': '待确认', 'confirmed': '已确认', 'completed': '已完成', 'cancelled': '已取消' };
+        statusBadge.textContent = statusMap[status] || status;
+
+        // 点击 Badge 弹出状态修改菜单
+        statusBadge.addEventListener('click', (e) => {
+            e.stopPropagation(); // 阻止冒泡，避免触发整个行点击
+
+            // 移除已存在的菜单
+            document.querySelectorAll('.status-popup-menu').forEach(el => el.remove());
+
+            // 创建菜单
+            const menu = document.createElement('div');
+            menu.classList.add('status-popup-menu');
+
+            const options = [
+                { key: 'pending', label: '待确认', icon: 'schedule', color: 'pending' },
+                { key: 'confirmed', label: '已确认', icon: 'check_circle', color: 'confirmed' },
+                { key: 'completed', label: '已完成', icon: 'task_alt', color: 'completed' },
+                { key: 'cancelled', label: '已取消', icon: 'cancel', color: 'cancelled' }
+            ];
+
+            options.forEach(opt => {
                 const item = document.createElement('div');
-                item.classList.add('group-picker-item');
-                const teacher = rec.teacher_name || '待分配';
-                const typeText = rec.schedule_types || rec.schedule_type || '未分类';
-                const locText = (rec.location || '').trim();
-                item.textContent = `${teacher}（${typeText}）${locText ? ' ' + locText : ''}`;
-                item.addEventListener('click', (ev) => {
+                item.classList.add('status-popup-item');
+                if (opt.key === status) item.classList.add('current');
+
+                // 添加小圆点或图标
+                item.innerHTML = `
+                    <span class="status-dot ${opt.color}"></span>
+                    <span>${opt.label}</span>
+                `;
+
+                item.addEventListener('click', async (ev) => {
                     ev.stopPropagation();
-                    try { if (rec && rec.id) { editSchedule(rec.id); } } catch (_) { }
-                    try { picker.remove(); } catch (_) { }
+                    menu.remove();
+                    if (opt.key !== status) {
+                        // 乐观更新：立即更新 UI 样式
+                        statusBadge.className = 'status-badge-sm ' + opt.key;
+                        statusBadge.textContent = opt.label;
+
+                        // 调用后端更新
+                        await updateScheduleStatus(rec.id, opt.key);
+                    }
                 });
-                picker.appendChild(item);
+                menu.appendChild(item);
             });
-            const closeBtn = document.createElement('div');
-            closeBtn.classList.add('group-picker-close');
-            closeBtn.textContent = '关闭';
-            closeBtn.addEventListener('click', (ev) => { ev.stopPropagation(); try { picker.remove(); } catch (_) { } });
-            picker.appendChild(closeBtn);
-            groupDiv.appendChild(picker);
+
+            // 定位菜单
+            document.body.appendChild(menu);
+            const rect = statusBadge.getBoundingClientRect();
+            menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+            menu.style.left = `${rect.left + window.scrollX - 20}px`;
+
+            // 点击外部关闭
+            const closeHandler = () => {
+                menu.remove();
+                document.removeEventListener('click', closeHandler);
+            };
+            setTimeout(() => document.addEventListener('click', closeHandler), 0);
         });
-        groupDiv.appendChild(row);
-        td.appendChild(groupDiv);
+
+        row.appendChild(statusBadge);
+
+        // 点击单行编辑 (非 Badge 区域)
+        row.addEventListener('click', (e) => {
+            e.stopPropagation(); // 防止冒泡
+            if (rec.id && typeof editSchedule === 'function') {
+                editSchedule(rec.id);
+            }
+        });
+
+        listDiv.appendChild(row);
+    });
+    card.appendChild(listDiv);
+
+    // Separator
+    const divider = document.createElement('div');
+    divider.classList.add('schedule-divider');
+    card.appendChild(divider);
+
+    // --- Footer Section (Time & Location) ---
+    const footer = document.createElement('div');
+    footer.classList.add('schedule-footer');
+
+    const timeDiv = document.createElement('div');
+    timeDiv.classList.add('time-range');
+    timeDiv.textContent = `${first.start_time?.substring(0, 5)} - ${first.end_time?.substring(0, 5)}`;
+    footer.appendChild(timeDiv);
+
+    const locDiv = document.createElement('div');
+    locDiv.classList.add('location-text');
+    locDiv.textContent = first.location || '地点待定';
+    footer.appendChild(locDiv);
+
+    card.appendChild(footer);
+
+    return card;
+}
+
+// 辅助函数：更新排课状态
+async function updateScheduleStatus(id, newStatus) {
+    if (!id || !newStatus) return;
+    try {
+        if (!window.apiUtils || typeof window.apiUtils.put !== 'function') {
+            console.error('API Utils incomplete');
+            return;
+        }
+        // 调用更新接口
+        await window.apiUtils.put(`/admin/schedules/${id}`, { status: newStatus });
+
+        // 成功后刷新视图
+        if (window.apiUtils.showToast) window.apiUtils.showToast('状态更新成功', 'success');
+
+        // 智能刷新：如果是周视图且 WeeklyDataStore 存在，更新本地缓存以保持数据一致性，但不刷新整个视图
+        const activeSection = document.querySelector('.dashboard-section.active');
+        if (activeSection && activeSection.id === 'schedule') {
+            // 手动更新缓存中的状态，避免全量刷新
+            if (window.WeeklyDataStore && window.WeeklyDataStore.schedules) {
+                for (const entry of window.WeeklyDataStore.schedules.values()) {
+                    if (entry && Array.isArray(entry.rows)) {
+                        const target = entry.rows.find(r => String(r.id) === String(id));
+                        if (target) {
+                            target.status = newStatus;
+                            // 还可以更新 schedule_type_cn 等其他可能受影响的字段（如果需要）
+                        }
+                    }
+                }
+            }
+            // 移除不再需要的强制刷新逻辑
+            // window.__weeklyForceRefresh = true; 
+            // await loadSchedules(); 
+        } else {
+
+            // 非周视图（如今日排课）也刷新
+            if (typeof loadSchedules === 'function') loadSchedules();
+            if (typeof loadTodaySchedules === 'function') loadTodaySchedules();
+        }
+    } catch (error) {
+        console.error('更新状态失败', error);
+        if (window.apiUtils.showToast) window.apiUtils.showToast('状态更新失败', 'error');
+        // 可选：如果失败，刷新页面以恢复原状
+        if (typeof loadSchedules === 'function') loadSchedules();
     }
 }
 
@@ -2658,7 +2986,7 @@ function renderWeeklyHeader(weekDates) {
     tr.appendChild(thStudent);
     weekDates.forEach(d => {
         const th = document.createElement('th');
-        th.textContent = formatDayLabel(d); // 例如：08/周一
+        th.innerHTML = formatDayLabel(d); // 使用 innerHTML 渲染两行日期
         // 为匹配与调试添加数据属性：ISO 日期键
         const iso = toISODate(d);
         th.dataset.date = iso;
@@ -2767,7 +3095,7 @@ function openCellEditor(student, isoDate) {
         if (studentSel) studentSel.value = String(student.id);
         if (dateInput) dateInput.value = isoDate;
         if (startTimeInput) startTimeInput.value = '19:00';
-        if (endTimeInput) endTimeInput.value = '21:30';
+        if (endTimeInput) endTimeInput.value = '22:00';
         if (locationInput) locationInput.value = student.visit_location || '';
         // 锁定学生与日期（不可修改）：显示只读视图并禁用输入控件
         if (studentSel) {
@@ -3638,7 +3966,7 @@ async function loadUsers(type, opts = {}) {
         if (!sentinel) {
             sentinel = document.createElement('tr');
             sentinel.id = 'usersListSentinel';
-            sentinel.innerHTML = `<td colspan="${(USER_FIELDS[state.type] || []).length + 2}">下拉加载更多...</td>`;
+            sentinel.innerHTML = `<td colspan="${(USER_FIELDS[state.type] || []).length + 2}"></td>`;
             tbody.appendChild(sentinel);
             const io = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
@@ -3744,6 +4072,10 @@ function showEditUserModal(id, userType) {
         const sv = (user.status == null ? 1 : user.status);
         statusSelect.value = String(sv);
     }
+    const restrictionSelect = document.getElementById('userRestriction');
+    if (restrictionSelect && userType === 'teacher') {
+        restrictionSelect.value = String(user.restriction ?? 1);
+    }
     toggleContactFields(userType);
     openUserFormModal(formContainer, overlay);
     // 保存快照用于后续冲突检测
@@ -3810,11 +4142,14 @@ function toggleContactFields(userType) {
         if (professionGroup) professionGroup.style.display = 'block';
         if (homeAddressGroup) homeAddressGroup.style.display = 'block';
         if (statusGroup) statusGroup.style.display = 'block';
+        const restrictionGroup = document.getElementById('userRestrictionGroup');
         if (userType === 'teacher') {
             if (workLocationGroup) workLocationGroup.style.display = 'block';
+            if (restrictionGroup) restrictionGroup.style.display = 'block';
             if (visitLocationGroup) visitLocationGroup.style.display = 'none';
         } else {
             if (workLocationGroup) workLocationGroup.style.display = 'none';
+            if (restrictionGroup) restrictionGroup.style.display = 'none';
             if (visitLocationGroup) visitLocationGroup.style.display = 'block';
         }
     }
@@ -3895,19 +4230,28 @@ async function showAddScheduleModal() {
     if (dateInput) { dateInput.value = todayISO; dateInput.disabled = false; dateInput.style.display = ''; }
     if (dateReadonlyDiv) dateReadonlyDiv.style.display = 'none';
     if (startTimeInput) startTimeInput.value = '19:00';
-    if (endTimeInput) endTimeInput.value = '21:30';
+    if (endTimeInput) endTimeInput.value = '22:00';
     if (locationInput) locationInput.value = '';
     // 隐藏删除按钮（仅编辑模式显示）
     const delBtn = document.getElementById('scheduleFormDelete');
     if (delBtn) delBtn.style.display = 'none';
-    await loadScheduleFormOptions();
-    // 打开时将老师默认设置为第一个选项
-    const teacherSel2 = form.querySelector('#scheduleTeacher');
-    if (teacherSel2 && teacherSel2.options && teacherSel2.options.length > 1) {
-        // 第一个是“选择教师”，从第二个开始取第一个有效教师
-        teacherSel2.value = teacherSel2.options[1].value;
-    }
+
+    // 立即显示弹窗，避免等待数据加载导致“点击没反应”的卡顿感
     formContainer.style.display = 'block';
+
+    // Clear availability cache to force fresh calculation on open
+    window.__availabilityCache = null;
+
+    // 异步加载选项，加载完后会自动填充和check
+    await loadScheduleFormOptions();
+
+    // Trigger auto-resize for location if value exists (though usually empty for Add)
+    if (locationInput && locationInput.value) {
+        locationInput.style.height = 'auto'; // Reset
+        locationInput.dispatchEvent(new Event('input'));
+    }
+
+    if (window.forceUpdateTeacherAvailability) window.forceUpdateTeacherAvailability();
 }
 
 async function editSchedule(scheduleId) {
@@ -3917,6 +4261,8 @@ async function editSchedule(scheduleId) {
         const title = document.getElementById('scheduleFormTitle');
         if (!formContainer || !form) return;
 
+        // Clear cache for edit mode as well (though date might change, fresh start is good)
+        window.__availabilityCache = null;
         await loadScheduleFormOptions();
         const data = await window.apiUtils.get(`/admin/schedules/${scheduleId}`);
 
@@ -3963,7 +4309,7 @@ async function editSchedule(scheduleId) {
         if (dateInput) dateInput.value = isoDate || '';
         // 规范化时间为 HH:MM，避免出现 HH:MM:SS 导致校验失败
         const normStart = sanitizeTimeString(data.start_time) || '19:00';
-        const normEnd = sanitizeTimeString(data.end_time) || '21:30';
+        const normEnd = sanitizeTimeString(data.end_time) || '22:00';
         if (startTimeInput) startTimeInput.value = normStart;
         if (endTimeInput) endTimeInput.value = normEnd;
         if (locationInput) locationInput.value = data.location || '';
@@ -4083,6 +4429,11 @@ async function editSchedule(scheduleId) {
                     toggleChanged(locationInput, String(locationInput.value || '') !== String(original.location || ''));
                 });
                 toggleChanged(locationInput, String(locationInput.value || '') !== String(original.location || ''));
+                // Trigger auto-grow for existing value
+                if (locationInput.value) {
+                    locationInput.style.height = 'auto'; // Reset
+                    locationInput.dispatchEvent(new Event('input'));
+                }
             }
             if (statusSel) {
                 statusSel.addEventListener('change', () => {
@@ -4104,6 +4455,7 @@ async function editSchedule(scheduleId) {
             delBtn.parentNode.replaceChild(newDel, delBtn);
             newDel.addEventListener('click', () => deleteSchedule(scheduleId));
         }
+        if (window.forceUpdateTeacherAvailability) window.forceUpdateTeacherAvailability();
         formContainer.style.display = 'block';
     } catch (error) {
         console.error('加载排课详情错误:', error);
@@ -4147,103 +4499,366 @@ async function confirmSchedule(scheduleId) {
 // 加载排课表单的教师/学生选项
 async function loadScheduleFormOptions() {
     try {
+        // User Request: Always recalculate on modal open to avoid stale state.
+        // Cache is cleared in show/edit functions, or we can clear here?
+        // Note: loadScheduleFormOptions is called by show/edit.
+        // It's safer to rely on explicit clearing in those functions if we want "per modal session" caching.
+        // But the user said "every time open window...".
+        // Let's Ensure cache logic inside updateTeacherAvailability respects this.
+
         const teacherSel = document.getElementById('scheduleTeacher');
         const studentSel = document.getElementById('scheduleStudent');
         const typeSel = document.getElementById('scheduleTypeSelect');
         const teacherFilterSel = document.getElementById('teacherFilter');
-        if (teacherSel) {
+
+        // 特殊教师白名单 (ID: 7-叶老师, 9-金博, 10-侯老师)
+        const WHITELIST_IDS = [7, 9, 10];
+
+        // 并行获取数据以进一步加速
+        const [teachers, students] = await Promise.all([
+            WeeklyDataStore.getTeachers(),
+            WeeklyDataStore.getStudents()
+        ]);
+
+        // 缓存完整列表用于前端动态筛选
+        window.__allTeachersCache = teachers || [];
+
+        // 定义渲染函数：根据忙碌状态和限制渲染教师选项
+        const renderTeacherOptions = (busyIds = new Set(), unavailableIds = new Set()) => {
+            if (!teacherSel) return;
+            const currentVal = teacherSel.value; // 保留当前选中值
             teacherSel.innerHTML = '<option value="">选择教师</option>';
-            // 使用新的API工具类获取教师列表
-            let teachers = [];
-            try {
-                const tResp = await window.apiUtils.get('/admin/users/teacher');
-                // 兼容多种后端返回格式：直接数组、{data:[]}, {teachers:[]}, {items:[]}
-                if (Array.isArray(tResp)) {
-                    teachers = tResp;
-                } else if (tResp && Array.isArray(tResp.data)) {
-                    teachers = tResp.data;
-                } else if (tResp && Array.isArray(tResp.teachers)) {
-                    teachers = tResp.teachers;
-                } else if (tResp && Array.isArray(tResp.items)) {
-                    teachers = tResp.items;
-                } else if (tResp && tResp.data && Array.isArray(tResp.data.teachers)) {
-                    teachers = tResp.data.teachers;
-                } else {
-                    teachers = [];
-                }
-            } catch (err) {
-                console.warn('获取教师列表失败，使用默认列表:', err);
-                // 返回默认教师列表用于开发测试
-                teachers = [
-                    { id: 1, name: '教师A', status: 1 },
-                    { id: 2, name: '教师B', status: 1 },
-                    { id: 3, name: '教师C', status: 0 },
-                    { id: 4, name: '教师D', status: 1 },
-                    { id: 5, name: '教师E', status: 1 }
-                ];
-            }
-            // 仅展示未删除的教师，并按状态优先级排序（正常→暂停），再按姓名
+
+            // 排序：权重（状态） -> 姓名
             const weight = (v) => { const n = Number(v); if (n === 1) return 0; if (n === 0) return 1; return 2; };
-            teachers = (teachers || []).filter(t => Number(t.status) !== -1).sort((a, b) => {
+            const sortedTeachers = (window.__allTeachersCache || []).filter(t => Number(t.status) !== -1).sort((a, b) => {
                 const wa = weight(a?.status), wb = weight(b?.status);
                 if (wa !== wb) return wa - wb;
                 return String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-CN');
             });
-            if (Array.isArray(teachers)) {
-                teachers.forEach(t => {
-                    const opt = document.createElement('option');
-                    opt.value = t.id;
-                    opt.textContent = t.name + (Number(t.status) === 0 ? '（暂停）' : '');
-                    teacherSel.appendChild(opt);
-                });
+
+            let visibleCount = 0;
+
+            const normalList = [];
+            const unavailableList = [];
+
+            sortedTeachers.forEach(t => {
+                const tid = Number(t.id);
+                // Restriction check
+                const isUnavailable = unavailableIds.has(tid);
+                if (isUnavailable) {
+                    unavailableList.push(t);
+                } else {
+                    normalList.push(t);
+                }
+            });
+
+            // Helper to render an option
+            const renderOption = (t, isUnavailableItem) => {
+                const tid = Number(t.id);
+                const isSpecial = (t.restriction === 0);
+                const isBusy = busyIds.has(tid);
+                const isPaused = (Number(t.status) === 0);
+
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                let label = t.name;
+                if (isPaused) label += '（暂停）';
+
+                if (isUnavailableItem) {
+                    // Display unavailable teachers with light color
+                    opt.style.color = '#cbd5e1'; // Lighter gray (Slate 300)
+                    // User request: remove text suffix, just use color
+                } else {
+                    // Available teachers
+                    if (isSpecial) {
+                        label += ' ⭐';
+                        opt.style.backgroundColor = '#f0fdf4';
+                        opt.style.color = '#15803d';
+                        if (isBusy) label += ' (忙碌/冲突)';
+                    } else if (isBusy) {
+                        label += ' (忙碌)';
+                        opt.style.color = '#e11d48';
+                        opt.style.backgroundColor = '#fff1f2';
+                    } else {
+                        // Standard available
+                        opt.style.color = '#334155'; // Slate 700
+                    }
+                }
+                opt.textContent = label;
+                teacherSel.appendChild(opt);
+                visibleCount++;
+            };
+
+            // Render in order: Available first, then Unavailable
+            normalList.forEach(t => renderOption(t, false));
+            unavailableList.forEach(t => renderOption(t, true));
+
+            /* 
+               Old logic removed:
+               - Hiding unavailable
+               - Specific complex if-else
+            */
+
+            // 尝试恢复选中值
+            if (currentVal) {
+                teacherSel.value = currentVal;
+            } else {
+                // Default selection logic: Pick first available NORMAL teacher (non-special)
+                // User requested to exclude the 3 special (unrestricted) teachers from default selection
+                const firstNormal = normalList.find(t => (t.restriction !== 0));
+                if (firstNormal) {
+                    teacherSel.value = firstNormal.id;
+                } else if (normalList.length > 0) {
+                    // Fallback to first available (even if special)
+                    teacherSel.value = normalList[0].id;
+                }
             }
+            // 触发一次提示检查
+            checkSpecialTeacherHint();
+        };
+
+        // 提示检查函数
+        const checkSpecialTeacherHint = () => {
+            if (!teacherSel) return;
+            const val = Number(teacherSel.value);
+            // 查找或创建提示元素
+            let hint = document.getElementById('specialTeacherHint');
+            const selectedTeacher = (window.__allTeachersCache || []).find(t => Number(t.id) === val);
+
+            if (selectedTeacher && (selectedTeacher.restriction === 0)) {
+                if (!hint) {
+                    hint = document.createElement('div');
+                    hint.id = 'specialTeacherHint';
+                    hint.style.fontSize = '12px';
+                    hint.style.color = '#15803d';
+                    hint.style.marginTop = '4px';
+                    hint.style.padding = '4px 8px';
+                    hint.style.backgroundColor = '#f0fdf4';
+                    hint.style.borderRadius = '4px';
+                    hint.style.border = '1px solid #bbf7d0';
+                    hint.textContent = '💡 该老师不受排课时间限制。';
+                    teacherSel.parentNode.appendChild(hint);
+                } else {
+                    hint.style.display = 'block';
+                }
+            } else {
+                if (hint) hint.style.display = 'none';
+            }
+        };
+
+        // 动态可用性检查函数
+        const updateTeacherAvailability = async () => {
+            const dateInput = document.getElementById('scheduleDate');
+            const startInput = document.getElementById('scheduleStartTime');
+            const endInput = document.getElementById('scheduleEndTime');
+
+            const dateVal = dateInput ? dateInput.value : '';
+            const startVal = startInput ? startInput.value : '';
+            const endVal = endInput ? endInput.value : '';
+
+            // Loading State
+            if (teacherSel) {
+                const currentVal = teacherSel.value;
+                teacherSel.disabled = true;
+                // Optional: visual indicator
+                const loadingOpt = document.createElement('option');
+                loadingOpt.textContent = '计算可用性中...';
+                loadingOpt.selected = true;
+                if (teacherSel.firstChild) {
+                    teacherSel.insertBefore(loadingOpt, teacherSel.firstChild);
+                } else {
+                    teacherSel.appendChild(loadingOpt);
+                }
+            }
+
+            try {
+                // 如果日期时间不完整，显示所有（默认状态，假设无限制）
+                if (!dateVal || !startVal || !endVal) {
+                    // Still render all, but need to clear loading
+                    renderTeacherOptions(new Set(), new Set());
+                    return;
+                }
+
+                // 获取时间段的分钟数用于比较
+                const targetStart = hhmmToMinutes(startVal);
+                const targetEnd = hhmmToMinutes(endVal);
+                if (Number.isNaN(targetStart) || Number.isNaN(targetEnd)) {
+                    renderTeacherOptions(new Set(), new Set());
+                    return;
+                }
+
+                // 计算时间段涵盖的时段 (Morning/Afternoon/Evening)
+                const checkSlots = { morning: false, afternoon: false, evening: false };
+                const mStart = 6 * 60;
+                const mEnd = 12 * 60;
+                const aEnd = 19 * 60;
+                const eEnd = 24 * 60;
+
+                if (!(targetEnd <= mStart || targetStart >= mEnd)) checkSlots.morning = true;
+                if (!(targetEnd <= mEnd || targetStart >= aEnd)) checkSlots.afternoon = true;
+                if (!(targetEnd <= aEnd || targetStart >= eEnd)) checkSlots.evening = true;
+
+                // 初始化缓存
+                if (!window.__availabilityCache) window.__availabilityCache = new Map();
+
+                let schedules, availabilityData;
+
+                // 检查缓存
+                if (window.__availabilityCache.has(dateVal)) {
+                    // Availability 配置很少变动，可以缓存；排课冲突需要实时检查
+                    availabilityData = window.__availabilityCache.get(dateVal);
+                    schedules = await window.apiUtils.get('/admin/schedules/grid', { start_date: dateVal, end_date: dateVal });
+                } else {
+                    // 并行获取排课冲突 和 教师可用性配置
+                    [schedules, availabilityData] = await Promise.all([
+                        window.apiUtils.get('/admin/schedules/grid', { start_date: dateVal, end_date: dateVal }),
+                        window.apiUtils.get('/admin/teacher-availability', { startDate: dateVal, endDate: dateVal })
+                    ]);
+                    // 写入缓存
+                    window.__availabilityCache.set(dateVal, availabilityData);
+                }
+
+                // 处理 availability mapping: TeacherID -> Record
+                const availabilityMap = {};
+                (Array.isArray(availabilityData) ? availabilityData : []).forEach(item => {
+                    availabilityMap[item.id] = item.availability || {};
+                });
+
+                // 处理 busy set (排课冲突)
+                const busyIds = new Set();
+                const form = document.getElementById('scheduleForm');
+                const currentId = form ? form.dataset.id : '';
+
+                (Array.isArray(schedules) ? schedules : []).forEach(s => {
+                    if (currentId && String(s.id) === String(currentId)) return;
+                    if (s.status === 'cancelled') return;
+                    if (!s.teacher_id) return;
+                    const sStart = hhmmToMinutes(sanitizeTimeString(s.start_time));
+                    const sEnd = hhmmToMinutes(sanitizeTimeString(s.end_time));
+                    if (Number.isFinite(sStart) && Number.isFinite(sEnd)) {
+                        if (!(sEnd <= targetStart || sStart >= targetEnd)) {
+                            busyIds.add(Number(s.teacher_id));
+                        }
+                    }
+                });
+
+                // 处理 unavailable set (restriction check)
+                const unavailableIds = new Set();
+                const allTeachers = window.__allTeachersCache || [];
+
+                allTeachers.forEach(t => {
+                    const tid = Number(t.id);
+                    const restriction = t.restriction ?? 1;
+
+                    if (restriction === 0) return; // Always available
+                    if (restriction === 1) { // Check availability
+                        const teacherAvail = availabilityMap[tid];
+                        let dayRecord = teacherAvail ? teacherAvail[dateVal] : null;
+
+                        if (!dayRecord && teacherAvail) {
+                            const dateKey = Object.keys(teacherAvail).find(k => k.startsWith(dateVal));
+                            dayRecord = dateKey ? teacherAvail[dateKey] : null;
+                        }
+
+                        if (!dayRecord) return; // Assume available
+
+                        let isOk = true;
+                        if (checkSlots.morning && dayRecord.morning === false) isOk = false;
+                        if (checkSlots.afternoon && dayRecord.afternoon === false) isOk = false;
+                        if (checkSlots.evening && dayRecord.evening === false) isOk = false;
+
+                        if (!isOk) unavailableIds.add(tid);
+                    }
+                });
+
+                renderTeacherOptions(busyIds, unavailableIds);
+
+            } catch (e) {
+                console.error('检查教师可用性失败:', e);
+                renderTeacherOptions(new Set(), new Set());
+            } finally {
+                if (teacherSel) {
+                    teacherSel.disabled = false;
+                    // Remove loading option if it persists? renderTeacherOptions rebuilds content, so usually gone.
+                }
+            }
+        };
+
+        // 绑定事件监听
+        const dateInput = document.getElementById('scheduleDate');
+        const startInput = document.getElementById('scheduleStartTime');
+        const endInput = document.getElementById('scheduleEndTime');
+
+        if (dateInput) {
+            dateInput.removeEventListener('change', updateTeacherAvailability);
+            dateInput.addEventListener('change', updateTeacherAvailability);
         }
+        if (startInput) startInput.addEventListener('change', updateTeacherAvailability);
+        if (endInput) endInput.addEventListener('change', updateTeacherAvailability);
+        if (teacherSel) teacherSel.addEventListener('change', checkSpecialTeacherHint);
+
+        window.forceUpdateTeacherAvailability = updateTeacherAvailability;
+
+
+        // 初始渲染：如果有日期/时间，立即执行检查；否则显示全部
+        if (dateInput && dateInput.value && startInput && startInput.value) {
+            await updateTeacherAvailability();
+        } else {
+            if (teacherSel) renderTeacherOptions(new Set(), new Set());
+        }
+
         if (studentSel) {
             studentSel.innerHTML = '<option value="">选择学生</option>';
-            // 使用新的API工具类获取学生列表
-            const sResp = await window.apiUtils.get('/admin/users/student');
-            let students = Array.isArray(sResp) ? sResp : (sResp && Array.isArray(sResp.data) ? sResp.data : []);
-            // 仅展示状态为正常的学生，并按默认排序（状态→姓名）
-            students = (students || []).filter(s => Number(s.status ?? 1) === 1);
-            students = students.sort((a, b) => {
+            const sortedStudents = (students || []).filter(s => Number(s.status ?? 1) === 1).sort((a, b) => {
                 const an = String(a.name || '').localeCompare(String(b.name || ''), 'zh-CN');
                 return an;
             });
-            if (Array.isArray(students)) {
-                // 缓存用于地点自动填充
-                window.__studentsFormList = students;
-                students.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = s.name;
-                    studentSel.appendChild(opt);
-                });
-                // 学生切换时自动填充地点
-                const locationInput = document.getElementById('scheduleLocation');
-                studentSel.addEventListener('change', () => {
-                    const sid = Number(studentSel.value);
-                    const found = (window.__studentsFormList || []).find(x => Number(x.id) === sid);
-                    if (locationInput) locationInput.value = found?.visit_location || '';
-                });
+
+            window.__studentsFormList = sortedStudents;
+            sortedStudents.forEach(s => {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.name;
+                studentSel.appendChild(opt);
+            });
+            const locationInput = document.getElementById('scheduleLocation');
+            const autoResize = (el) => {
+                if (!el) return;
+                el.style.height = 'auto';
+                el.style.height = (el.scrollHeight + 6) + 'px';
+            };
+            if (locationInput) {
+                locationInput.addEventListener('input', function () { autoResize(this); });
+                // Initial resize if value exists
+                if (locationInput.value) autoResize(locationInput);
             }
+
+            studentSel.addEventListener('change', () => {
+                const sid = Number(studentSel.value);
+                const found = (window.__studentsFormList || []).find(x => Number(x.id) === sid);
+                if (locationInput) {
+                    locationInput.value = found?.visit_location || '';
+                    autoResize(locationInput);
+                }
+            });
         }
         if (typeSel) {
             typeSel.innerHTML = '<option value="">选择类型</option>';
-            let types = [];
-            if (ScheduleTypesStore.getAll().length === 0) {
-                // 尝试从缓存恢复，否则拉取
-                const restored = ScheduleTypesStore.fromCache();
-                if (!restored) {
-                    try {
-                        // 使用新的API工具类获取课程类型
-                        const fetched = await window.apiUtils.get('/schedule/types');
-                        if (Array.isArray(fetched)) ScheduleTypesStore.load(fetched);
-                    } catch (error) {
-                        console.warn('获取课程类型失败:', error);
+            let types = ScheduleTypesStore.getAll();
+            const hasAdvisory = types.some(t => (t.name || '').includes('advisory') || (t.description || '').includes('咨询'));
+
+            // If empty or missing Advisory (and we suspect it should exist), try fresh fetch
+            if (types.length === 0 || !hasAdvisory) {
+                try {
+                    const fetched = await window.apiUtils.get('/schedule/types');
+                    if (Array.isArray(fetched) && fetched.length > 0) {
+                        ScheduleTypesStore.load(fetched);
+                        types = ScheduleTypesStore.getAll();
                     }
-                }
+                } catch (error) { console.warn('刷新课程类型失败:', error); }
             }
-            types = ScheduleTypesStore.getAll();
+
             typeSel.innerHTML = '<option value="">选择类型</option>';
             types.forEach(t => {
                 const opt = document.createElement('option');
@@ -4251,7 +4866,6 @@ async function loadScheduleFormOptions() {
                 opt.textContent = (t.description || t.name || `类型${t.id}`);
                 typeSel.appendChild(opt);
             });
-            // 默认选择“入户”类型（优先精确匹配，避免选择“半次入户”）
             let defaultType = types.find(t => {
                 const name = String(t.name || '').trim();
                 const desc = String(t.description || '').trim();
@@ -4264,46 +4878,25 @@ async function loadScheduleFormOptions() {
                     return (name.includes('入户') || desc.includes('入户')) && !(name.includes('半次') || desc.includes('半次'));
                 });
             }
-            if (defaultType) {
-                typeSel.value = String(defaultType.id);
-            }
+            if (defaultType) typeSel.value = String(defaultType.id);
         }
-        // 填充教师筛选下拉（仅用于视图筛选，包含所有教师状态）
+
+        // 教师筛选器（仅用于列表页筛选，无需可用性逻辑）
         if (teacherFilterSel) {
             teacherFilterSel.innerHTML = '<option value="">全部教师</option>';
-            try {
-                let teachers = [];
-                try {
-                    const tResp = await window.apiUtils.get('/admin/users/teacher');
-                    teachers = Array.isArray(tResp) ? tResp : (tResp && Array.isArray(tResp.data) ? tResp.data : []);
-                } catch (err) {
-                    console.warn('获取教师列表失败，使用默认列表:', err);
-                    // 返回默认教师列表用于开发测试
-                    teachers = [
-                        { id: 1, name: '教师A', status: 1 },
-                        { id: 2, name: '教师B', status: 1 },
-                        { id: 3, name: '教师C', status: 0 },
-                        { id: 4, name: '教师D', status: 1 },
-                        { id: 5, name: '教师E', status: 1 }
-                    ];
-                }
-                const weight = (v) => { const n = Number(v); if (n === 1) return 0; if (n === 0) return 1; if (n === -1) return 2; return 3; };
-                // 过滤删除状态教师，不显示在筛选下拉中
-                teachers = (teachers || []).filter(t => Number(t?.status) !== -1).sort((a, b) => {
-                    const wa = weight(a?.status); const wb = weight(b?.status);
-                    if (wa !== wb) return wa - wb;
-                    return String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-CN');
-                });
-                teachers.forEach(t => {
-                    const opt = document.createElement('option');
-                    opt.value = t.id;
-                    opt.textContent = t.name + (Number(t.status) === 0 ? '（暂停）' : '');
-                    teacherFilterSel.appendChild(opt);
-                });
-
-            } catch (err) {
-                console.warn('加载教师筛选下拉失败:', err);
-            }
+            // 复用缓存的教师列表
+            const weight = (v) => { const n = Number(v); if (n === 1) return 0; if (n === 0) return 1; if (n === -1) return 2; return 3; };
+            const filterTeachers = (teachers || []).filter(t => Number(t?.status) !== -1).sort((a, b) => {
+                const wa = weight(a?.status); const wb = weight(b?.status);
+                if (wa !== wb) return wa - wb;
+                return String(a?.name || '').localeCompare(String(b?.name || ''), 'zh-CN');
+            });
+            filterTeachers.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t.id;
+                opt.textContent = t.name + (Number(t.status) === 0 ? '（暂停）' : '');
+                teacherFilterSel.appendChild(opt);
+            });
         }
     } catch (error) {
         console.error('加载排课表单选项失败:', error);
@@ -5148,7 +5741,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (exportDialogBtn) {
         exportDialogBtn.addEventListener('click', () => {
             if (window.ExportDialog) {
-                window.ExportDialog.open();
+                const startDate = document.getElementById('startDate')?.value;
+                const endDate = document.getElementById('endDate')?.value;
+                window.ExportDialog.open({ startDate, endDate });
             } else {
                 showToast('导出功能未加载，请刷新页面', 'error');
             }
@@ -5235,6 +5830,8 @@ function renderTodaySchedules(schedules) {
         else if (typeName.includes('评审')) typeClass = 'type-review';
         else if (typeName.includes('半次')) typeClass = 'type-half-visit';
         else if (typeName.includes('集体')) typeClass = 'type-group-activity';
+        else if (typeName.includes('咨询')) typeClass = 'type-advisory';
+
 
         card.innerHTML = `
             <div style="flex: 1;">
@@ -5258,3 +5855,428 @@ function renderTodaySchedules(schedules) {
         container.appendChild(card);
     });
 }
+// ==========================================
+// 教师空闲时间段功能
+// ==========================================
+
+let availabilityState = {
+    currentDate: new Date(),
+    initialized: false
+};
+
+function initTeacherAvailability() {
+    if (availabilityState.initialized) {
+        // 如果已经初始化，仅刷新数据
+        loadAvailability();
+        return;
+    }
+
+    // 绑定周切换按钮事件
+    const prevBtn = document.getElementById('avPrevWeek');
+    const nextBtn = document.getElementById('avNextWeek');
+
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            availabilityState.currentDate.setDate(availabilityState.currentDate.getDate() - 7);
+            loadAvailability();
+        });
+    }
+
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            availabilityState.currentDate.setDate(availabilityState.currentDate.getDate() + 7);
+            loadAvailability();
+        });
+    }
+
+    availabilityState.initialized = true;
+    loadAvailability();
+}
+
+async function loadAvailability() {
+    const tableBody = document.getElementById('availabilityBody');
+    const weekRangeSpan = document.getElementById('avWeekRange');
+
+    if (!tableBody || !weekRangeSpan) return;
+
+    tableBody.innerHTML = '<tr><td colspan="8" class="loading-cell"><div class="loading-spinner"></div> 加载中...</td></tr>';
+
+    // 计算当前周的日期范围 (周一到周日)
+    const curr = new Date(availabilityState.currentDate);
+    const day = curr.getDay(); // 0 is Sunday
+    // 将周日(0)视为7，以符合习惯(周一为第一天)
+    const diff = curr.getDate() - (day === 0 ? 6 : day - 1);
+
+    const monday = new Date(curr.setDate(diff));
+    const dates = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        dates.push(d);
+    }
+
+    // 更新日期显示 (YYYY年MM月DD日 - YYYY年MM月DD日)
+    const formatDateRange = (d) => `${d.getFullYear()}年${String(d.getMonth() + 1).padStart(2, '0')}月${String(d.getDate()).padStart(2, '0')}日`;
+    weekRangeSpan.textContent = `${formatDateRange(dates[0])} - ${formatDateRange(dates[6])}`;
+
+    // 渲染表头
+    renderAvailabilityHeader(dates);
+
+    try {
+        // 使用本地时间构建 YYYY-MM-DD，确保与 renderAvailabilityBody 中的 key 一致
+        const toLocalISODate = (d) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const queryStart = toLocalISODate(dates[0]);
+        const queryEnd = toLocalISODate(dates[6]);
+
+        const data = await window.apiUtils.get('/admin/teacher-availability', {
+            startDate: queryStart,
+            endDate: queryEnd
+        });
+
+        renderAvailabilityBody(data, dates);
+    } catch (error) {
+        console.error('加载空闲数据失败:', error);
+        tableBody.innerHTML = '<tr><td colspan="8" class="error-cell">加载失败，请重试</td></tr>';
+    }
+}
+
+function renderAvailabilityHeader(dates) {
+    const thead = document.getElementById('availabilityHeader');
+    if (!thead) return;
+
+    const days = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
+    const today = new Date().toDateString();
+
+    let html = '<tr><th style="width: 120px; min-width: 120px;">教师姓名</th>';
+    dates.forEach((date, i) => {
+        const isToday = date.toDateString() === today;
+        // MM月DD日/星期X
+        const dateStr = `${String(date.getMonth() + 1).padStart(2, '0')}月${String(date.getDate()).padStart(2, '0')}日`;
+        html += `<th class="${isToday ? 'today-col' : ''}">
+            <div class="th-content">
+                <span class="th-date">${dateStr}</span>
+                <span class="th-day">${days[i]}</span>
+            </div>
+        </th>`;
+    });
+    html += '</tr>';
+    thead.innerHTML = html;
+}
+
+function renderAvailabilityBody(teachers, dates) {
+    const tbody = document.getElementById('availabilityBody');
+    if (!tbody) return;
+
+    if (!teachers || teachers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="no-data">暂无教师数据</td></tr>';
+        return;
+    }
+
+    let html = '';
+    teachers.forEach(teacher => {
+        html += `<tr>`;
+        html += `<td class="fixed-col font-medium">${teacher.name}</td>`;
+
+        dates.forEach(date => {
+            // YYYY-MM-DD
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const da = String(date.getDate()).padStart(2, '0');
+            const dateKey = `${year}-${month}-${da}`;
+
+            const availability = (teacher.availability && teacher.availability[dateKey]) || {};
+
+            html += `<td class="availability-cell">${renderAvailabilityCell(availability, teacher.id, dateKey)}</td>`;
+        });
+
+        html += `</tr>`;
+    });
+
+    tbody.innerHTML = html;
+}
+
+// 内部渲染逻辑
+function renderInnerCell(data, teacherId, dateKey) {
+    const getIconClass = (key, val) => {
+        let cls = 'icon-slot interactive material-icons-round';
+        if (val === true) cls += ' available';
+        else cls += ' busy';
+
+        const pKey = `${teacherId}|${dateKey}`;
+        const pending = PendingChangesManager.changes.get(pKey);
+        if (pending && pending[key] !== undefined) {
+            cls += ' changed';
+        }
+        return cls;
+    };
+
+    return `
+        <span class="${getIconClass('morning', data.morning)}" onclick="toggleAvailability(${teacherId}, '${dateKey}', 'morning')" title="上午">wb_sunny</span>
+        <span class="${getIconClass('afternoon', data.afternoon)}" onclick="toggleAvailability(${teacherId}, '${dateKey}', 'afternoon')" title="下午">brightness_6</span>
+        <span class="${getIconClass('evening', data.evening)}" onclick="toggleAvailability(${teacherId}, '${dateKey}', 'evening')" title="晚上">nights_stay</span>
+    `;
+}
+
+function renderAvailabilityCell(data, teacherId, dateKey) {
+    // 读取当前有效状态（含 pending）
+    const effective = PendingChangesManager.getStatus(teacherId, dateKey, {
+        morning: data.morning,
+        afternoon: data.afternoon,
+        evening: data.evening
+    });
+
+    // 存储原始状态到 dataset，方便 toggle 时读取
+    return `<div id="cell-${teacherId}-${dateKey}" class="slot-container" 
+        data-orig-m="${data.morning === true}" 
+        data-orig-a="${data.afternoon === true}" 
+        data-orig-e="${data.evening === true}">
+        ${renderInnerCell(effective, teacherId, dateKey)}
+    </div>`;
+}
+
+// --- 待保存更改管理器 ---
+const PendingChangesManager = {
+    changes: new Map(), // Key: `${teacherId}|${dateKey}` -> { morning, afternoon, evening }
+
+    // 获取当前状态（合并原始状态与挂起的更改）
+    getStatus(teacherId, dateKey, originalData) {
+        const key = `${teacherId}|${dateKey}`;
+        if (this.changes.has(key)) {
+            return this.changes.get(key);
+        }
+        return {
+            morning: originalData.morning === true,
+            afternoon: originalData.afternoon === true,
+            evening: originalData.evening === true
+        };
+    },
+
+    toggle(teacherId, dateKey, period, originalData) {
+        const current = this.getStatus(teacherId, dateKey, originalData);
+        const next = { ...current, [period]: !current[period] };
+
+        const key = `${teacherId}|${dateKey}`;
+        this.changes.set(key, next);
+        this.updateUI();
+        return next;
+    },
+
+    hasChanges() {
+        return this.changes.size > 0;
+    },
+
+    clear() {
+        this.changes.clear();
+        this.updateUI();
+    },
+
+    updateUI() {
+        const bar = document.getElementById('availabilitySaveBar');
+        if (!bar) return;
+        if (this.hasChanges()) {
+            bar.style.display = 'flex';
+            const count = document.getElementById('availabilityChangeCount');
+            if (count) count.textContent = `${this.changes.size} 处更改`;
+        } else {
+            bar.style.display = 'none';
+        }
+    }
+};
+
+window.toggleAvailability = function (teacherId, dateKey, period) {
+    const cellId = `cell-${teacherId}-${dateKey}`;
+    const cellEl = document.getElementById(cellId);
+    if (!cellEl) return;
+
+    // 从 dataset 获取原始数据
+    const origM = cellEl.dataset.origM === 'true';
+    const origA = cellEl.dataset.origA === 'true';
+    const origE = cellEl.dataset.origE === 'true';
+    const original = { morning: origM, afternoon: origA, evening: origE };
+
+    const newState = PendingChangesManager.toggle(teacherId, dateKey, period, original);
+
+    // 立即重新渲染该单元格
+    cellEl.innerHTML = renderInnerCell(newState, teacherId, dateKey);
+};
+
+// 保存更改
+window.saveAvailabilityChanges = async function () {
+    if (!PendingChangesManager.hasChanges()) return;
+
+    // 1. 记录受影响的 DOM 节点 Key，因为 clear() 后 map 会被清空
+    const affectedKeys = Array.from(PendingChangesManager.changes.keys());
+    const changesSnapshot = new Map(PendingChangesManager.changes); // 快照
+
+    try {
+        const btn = document.getElementById('saveAvailabilityBtn');
+        if (btn) btn.textContent = '保存中...';
+
+        const updates = [];
+        for (const [key, state] of changesSnapshot.entries()) {
+            const [teacherId, date] = key.split('|');
+            updates.push({
+                teacher_id: teacherId,
+                date: date,
+                morning: state.morning ? 1 : 0,
+                afternoon: state.afternoon ? 1 : 0,
+                evening: state.evening ? 1 : 0
+            });
+        }
+
+        await window.apiUtils.post('/admin/teacher-availability', { updates });
+
+        window.apiUtils.showToast('时间安排已保存', 'success');
+
+        // 局部更新流程：
+        // A. 更新 DOM 的 data-orig-* 属性为最新提交的状态
+        for (const [key, state] of changesSnapshot.entries()) {
+            const [teacherId, dateKey] = key.split('|');
+            const cellId = `cell-${teacherId}-${dateKey}`;
+            const cellEl = document.getElementById(cellId);
+            if (cellEl) {
+                cellEl.dataset.origM = state.morning ? 'true' : 'false';
+                cellEl.dataset.origA = state.afternoon ? 'true' : 'false';
+                cellEl.dataset.origE = state.evening ? 'true' : 'false';
+            }
+        }
+
+        // B. 清除管理器中的变更状态
+        PendingChangesManager.clear();
+
+        // C. 重绘受影响的单元格
+        // 此时 getStatus 会读取步骤 A 更新后的 dataset，且无 pending 状态
+        // 效果：图标显示最新状态，且无"changed"蓝色光晕
+        affectedKeys.forEach(key => {
+            const [teacherId, dateKey] = key.split('|');
+            const cellId = `cell-${teacherId}-${dateKey}`;
+            const cellEl = document.getElementById(cellId);
+            if (cellEl) {
+                // 从 DOM 读取最新 update 的 original
+                const origM = cellEl.dataset.origM === 'true';
+                const origA = cellEl.dataset.origA === 'true';
+                const origE = cellEl.dataset.origE === 'true';
+
+                // 重新生成 HTML
+                cellEl.innerHTML = renderInnerCell(
+                    { morning: origM, afternoon: origA, evening: origE },
+                    teacherId,
+                    dateKey
+                );
+            }
+        });
+
+    } catch (e) {
+        console.error(e);
+        window.apiUtils.showToast('保存失败: ' + e.message, 'error');
+    } finally {
+        const btn = document.getElementById('saveAvailabilityBtn');
+        if (btn) btn.textContent = '保存更改';
+    }
+};
+
+window.cancelAvailabilityChanges = function () {
+    if (confirm('确定放弃所有未保存的更改吗？')) {
+        // 1. 记录受影响的 DOM 节点 Key
+        const affectedKeys = Array.from(PendingChangesManager.changes.keys());
+
+        // 2. 清除变更状态
+        PendingChangesManager.clear();
+
+        // 3. 重绘受影响的单元格（恢复为 data-orig-* 的状态）
+        affectedKeys.forEach(key => {
+            const [teacherId, dateKey] = key.split('|');
+            const cellId = `cell-${teacherId}-${dateKey}`;
+            const cellEl = document.getElementById(cellId);
+            if (cellEl) {
+                const origM = cellEl.dataset.origM === 'true';
+                const origA = cellEl.dataset.origA === 'true';
+                const origE = cellEl.dataset.origE === 'true';
+
+                // 重新生成 HTML，PendingManager 已空，getStatus 会返回原始 dataset 状态
+                cellEl.innerHTML = renderInnerCell(
+                    { morning: origM, afternoon: origA, evening: origE },
+                    teacherId,
+                    dateKey
+                );
+            }
+        });
+    }
+};
+
+// 注入浮动栏 (如果不存在)
+function ensureFloatingBar() {
+    if (!document.getElementById('availabilitySaveBar')) {
+        const bar = document.createElement('div');
+        bar.id = 'availabilitySaveBar';
+        bar.innerHTML = `
+            <span style="font-weight:500; color:#334155" id="availabilityChangeCount">0 处更改</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-secondary btn-sm" onclick="cancelAvailabilityChanges()">取消</button>
+            <button class="btn btn-primary btn-sm" id="saveAvailabilityBtn" onclick="saveAvailabilityChanges()">保存更改</button>
+        `;
+        document.body.appendChild(bar);
+    }
+}
+ensureFloatingBar();
+
+// 需要加一点对应的 CSS 样式
+// CSS 样式
+const style = document.createElement('style');
+style.textContent = `
+    .availability-cell { padding: 4px !important; text-align: center; }
+    .slot-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 100%;
+    }
+    .icon-slot {
+        font-size: 20px; 
+        color: #e2e8f0; /* Default grey */
+        transition: all 0.2s;
+        user-select: none;
+    }
+    .icon-slot.interactive {
+        cursor: pointer;
+    }
+     .icon-slot.interactive:hover {
+        transform: scale(1.15);
+     }
+    .icon-slot.available {
+        color: #10b981; /* Green */
+    }
+    .icon-slot.busy {
+        color: #cbd5e1; /* Light Grey */
+    }
+    .icon-slot.changed {
+        /* Blue glow for changed items */
+        filter: drop-shadow(0 0 2px #3b82f6);
+    }
+    
+    #availabilitySaveBar {
+        position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+        background: white; padding: 12px 24px; border-radius: 8px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none; 
+        align-items: center; gap: 16px; z-index: 1000;
+        min-width: 300px; animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+    
+    .th-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+    }
+    .th-date { font-weight: 500; font-size: 14px; }
+    .th-day { font-size: 12px; color: #64748b; font-weight: normal; }
+`;
+document.head.appendChild(style);

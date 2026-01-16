@@ -59,11 +59,14 @@ class AdvancedExportService {
             { key: 'participation_rate', header: '参课率', width: 10 }
         ],
         teacher_schedule: [
+            { key: 'teacher_name', header: '教师名称', width: 15 },
             { key: 'student_name', header: '学生名称', width: 15 },
             { key: 'type', header: '类型', width: 12 },
             { key: 'date', header: '日期', width: 15 },
             { key: 'week', header: '星期', width: 10 },
             { key: 'time_range', header: '时间段', width: 15 },
+            { key: 'start_time', header: '开始时间', width: 10 },
+            { key: 'end_time', header: '结束时间', width: 10 },
             { key: 'status', header: '状态', width: 12 },
             { key: 'created_at', header: '创建时间', width: 18 },
             { key: 'schedule_id', header: '排课ID', width: 12 },
@@ -363,6 +366,10 @@ ca.id as schedule_id,
             values.push(filters.teacher_id);
             query += ` AND ca.teacher_id = $${values.length} `;
         }
+        if (filters.student_id) {
+            values.push(filters.student_id);
+            query += ` AND ca.student_id = $${values.length} `;
+        }
 
         query += ` ORDER BY ${dateExpr} DESC, ca.start_time ASC`;
 
@@ -486,8 +493,8 @@ ca.id as schedule_id,
     /**
      * 导出指定时间段的老师排课记录 (Admin兼容)
      */
-    async exportTeacherSchedule(startDate, endDate) {
-        const rows = await this.queryTeacherSchedule(startDate, endDate, {});
+    async exportTeacherSchedule(startDate, endDate, filters = {}) {
+        const rows = await this.queryTeacherSchedule(startDate, endDate, filters);
         return rows.map(row => ({
             schedule_id: row.schedule_id,
             teacher_id: row.teacher_id,
@@ -579,7 +586,7 @@ ca.id as schedule_id,
     /**
      * 执行导出
      */
-    async execute(type, format, startDate, endDate) {
+    async execute(type, format, startDate, endDate, filters = {}) {
         this.validateExportType(type);
         this.validateFormat(format);
 
@@ -592,7 +599,7 @@ ca.id as schedule_id,
                 data = await this.exportStudentInfo();
                 break;
             case AdvancedExportService.EXPORT_TYPES.TEACHER_SCHEDULE:
-                data = await this.exportTeacherSchedule(startDate, endDate);
+                data = await this.exportTeacherSchedule(startDate, endDate, filters);
                 break;
             case AdvancedExportService.EXPORT_TYPES.STUDENT_SCHEDULE:
                 data = await this.exportStudentSchedule(startDate, endDate);

@@ -23,6 +23,11 @@
     --spacing-md: 16px;
     --spacing-lg: 24px;
     --spacing-xl: 32px;
+
+    /* Header unification variables */
+    --controls-min-height: 72px;
+    --card-radius: 12px;
+    --shadow-card: 0 2px 4px rgba(0, 0, 0, 0.02);
 }
 
 [hidden] {
@@ -498,15 +503,24 @@
 }
 
 .form-group input,
-.form-group select {
+.form-group select,
+.form-group textarea {
     width: 100%;
-    padding: 12px 16px;
+    padding: 0 12px;
+    height: 40px;
+    /* Reduced height */
+    line-height: 38px;
+    /* Slightly less than height to account for borders/font rendering if needed, or just 40px */
     border: 1px solid #E9ECEF;
-    border-radius: 10px;
+    border-radius: 8px;
+    /* Slightly smaller radius for smaller box */
     font-size: var(--font-size-base);
     transition: all 0.3s ease;
     background-color: #F8F9FA;
     color: #2C3E50;
+    box-sizing: border-box;
+    /* Ensure vertical alignment for special inputs */
+    vertical-align: middle;
 }
 
 .form-group input:focus,
@@ -540,12 +554,32 @@
 
 .readonly-field {
     width: 100%;
-    padding: 12px 16px;
+    /* Fixed 40px height for single line fields (Student/Date) */
+    height: 40px;
+    padding: 0 12px;
     border: 1px dashed #E0E0E0;
-    border-radius: 10px;
+    border-radius: 8px;
     background-color: #FAFAFA;
     color: #555;
     margin-top: 8px;
+    /* Use block + line-height for reliable single-line centering */
+    display: block;
+    line-height: 38px;
+    /* Matches input line-height (40px - 2px border) */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+    /* Remove any conflicting min-height */
+}
+
+.form-group textarea {
+    height: auto;
+    min-height: 40px;
+    resize: vertical;
+    overflow-y: hidden;
+    padding: 10px 12px;
+    line-height: 1.4;
 }
 
 .readonly-hint {
@@ -1401,6 +1435,28 @@ tr:last-child td {
     display: block;
 }
 
+/* Statistics View Transitions */
+.stats-view {
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    display: none;
+    /* Default hidden */
+}
+
+.stats-view.active {
+    display: block;
+    /* Opacity will be handled by fade-in logic in JS, but default active should be visible if no other class */
+    opacity: 1;
+}
+
+.stats-view.fade-out {
+    opacity: 0;
+}
+
+.stats-view.fade-in {
+    opacity: 1;
+}
+
 /* 日期导航 */
 .date-navigation {
     display: flex;
@@ -1611,18 +1667,81 @@ tr:last-child td {
 }
 
 /* 新增样式：排课控制区域 */
-.schedule-controls {
+/* Unified Header Toolbar - Applied to all section headers */
+.header-toolbar {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    align-content: center;
     margin-bottom: var(--space-std);
-    padding: 16px 20px;
+    padding: 0 20px;
     background: #f8f9fa;
     border-radius: var(--card-radius);
     border: 1px solid #e9ecef;
     box-shadow: var(--shadow-card);
     min-height: var(--controls-min-height);
     flex-wrap: wrap;
+    gap: 16px;
+}
+
+/* Force unified height for all controls inside header-toolbar */
+.header-toolbar input,
+.header-toolbar select,
+.header-toolbar .btn,
+.header-toolbar button,
+.header-toolbar .tab-btn,
+.header-toolbar .nav-btn,
+.header-toolbar .week-navigation,
+.header-toolbar .filter-group {
+    height: 40px;
+    box-sizing: border-box;
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.header-toolbar span:not(.material-icons-round) {
+    height: 40px;
+    display: flex;
+    align-items: center;
+}
+
+
+/* Fix specific alignment context */
+.header-toolbar .week-navigation {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Ensure text inside spans/buttons aligns vertically */
+.header-toolbar span,
+.header-toolbar button,
+.header-toolbar .btn {
+    line-height: normal;
+}
+
+/* Remove any extra internal margins from specific groups that might cause expansion */
+.sch-controls-left,
+.schedule-filters,
+.statistics-tabs,
+.user-actions {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px;
+    margin: 0 !important;
+    height: 40px !important;
+}
+
+.header-toolbar label {
+    margin-right: 4px;
+    height: auto;
+    /* labels don't need fixed height if flex aligned */
+}
+
+/* Legacy support - will eventually replace */
+.schedule-controls {
+    /* Inherits layout from header-toolbar when applied together */
 }
 
 .schedule-filters {
@@ -2131,6 +2250,13 @@ tr:last-child td {
     border-color: #E5E7EB;
 }
 
+.schedule-item.type-advisory,
+.group-picker-item.type-advisory {
+    background: #F8FAFC;
+    border-color: #E5E7EB;
+}
+
+
 /* 冲突排课标记（红色边框提示） */
 .schedule-item.conflict {
     border-color: #E5E7EB;
@@ -2253,6 +2379,11 @@ tr:last-child td {
 .chip.type-group-activity {
     background: #C8E6C9;
     color: #065F46;
+}
+
+.chip.type-advisory {
+    background: #B2EBF2;
+    color: #006064;
 }
 
 .chip.type-default {
@@ -5151,5 +5282,94 @@ svg {
     #teaching-display .stat-card p {
         font-size: 22px;
         font-weight: 600;
+    }
+}
+
+/* Statistics Loading State */
+.stats-loading .stat-card {
+    position: relative;
+}
+
+.stats-loading .stat-value,
+.stats-loading .stat-trend span,
+.stats-loading .stat-label {
+    position: relative;
+    overflow: hidden;
+    color: transparent !important;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    min-height: 20px;
+}
+
+.stats-loading .stat-value::after,
+.stats-loading .stat-trend span::after,
+.stats-loading .stat-label::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg,
+            transparent,
+            rgba(255, 255, 255, 0.5),
+            transparent);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Statistics Loading Overlay */
+.charts-section {
+    position: relative;
+    /* Ensure overlay is contained */
+    min-height: 300px;
+}
+
+.stats-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    border-radius: 12px;
+    backdrop-filter: blur(4px);
+    transition: opacity 0.3s ease;
+}
+
+.stats-loading-overlay .loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid #e2e8f0;
+    border-top: 3px solid #3b82f6;
+    border-radius: 50%;
+    animation: stats-spin 1s linear infinite;
+    margin-bottom: 16px;
+}
+
+.stats-loading-overlay .loading-text {
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+@keyframes stats-spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
     }
 }
