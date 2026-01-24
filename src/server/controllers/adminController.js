@@ -469,7 +469,9 @@ const adminController = {
      */
     async getSchedules(req, res) {
         try {
-            let { startDate, endDate, status, type } = req.query;
+            let { startDate, endDate, status, type, course_id } = req.query;
+            // 兼容前端传递的 course_id 或 type 参数名
+            type = type || course_id;
             // 兼容：若未提供日期，则使用极大范围作为默认值（用于测试或前端未传参场景）
             if (!startDate || !endDate) {
                 startDate = startDate || '1970-01-01';
@@ -579,6 +581,7 @@ const adminController = {
                         ca.start_time,
                         ca.end_time,
                         ca.location,
+                        ca.family_participants,
                         ca.${dateCol} AS date
                  FROM course_arrangement ca
                  WHERE ca.id = $1`,
@@ -605,7 +608,9 @@ const adminController = {
                 ]);
             }
 
-            const { start_date, end_date, status, type_id, teacher_id } = req.query;
+            const { start_date, end_date, status, type_id, course_id, teacher_id } = req.query;
+            // 兼容前端传递的 course_id 或 type_id 参数名
+            const effectiveTypeId = type_id || course_id;
             if (!start_date || !end_date) {
                 return res.status(400).json({ message: '缺少开始/结束日期' });
             }
@@ -655,9 +660,9 @@ const adminController = {
                 sql += ` AND ca.status = $${params.length + 1}`;
                 params.push(status);
             }
-            if (type_id) {
+            if (effectiveTypeId) {
                 sql += ` AND ca.course_id = $${params.length + 1}`;
-                params.push(type_id);
+                params.push(effectiveTypeId);
             }
             // 过滤删除状态：允许正常与暂停，但不显示删除
             if (teacherHasStatus) sql += ` AND t.status <> -1`;
@@ -907,12 +912,15 @@ const adminController = {
                 // 按传入状态写入，默认 pending，且限制为四种合法状态
                 const allowedStatuses = new Set(['pending', 'confirmed', 'cancelled', 'completed']);
                 const nextStatus = allowedStatuses.has(String(status || '').trim()) ? String(status).trim() : 'pending';
-                const insertSql = `INSERT INTO course_arrangement (teacher_id, student_id, course_id, ${dateCol}, start_time, end_time, status, location, created_by)
-                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                // Family participants
+                const familyParticipants = req.body.family_participants !== undefined ? Number(req.body.family_participants) : 4;
+
+                const insertSql = `INSERT INTO course_arrangement (teacher_id, student_id, course_id, ${dateCol}, start_time, end_time, status, location, created_by, family_participants)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                                RETURNING id`;
                 const insertResult = await q(
                     insertSql,
-                    [teacherId, firstStudentId, firstTypeId, date, startTime, endTime, nextStatus, location || null, req.user.id]
+                    [teacherId, firstStudentId, firstTypeId, date, startTime, endTime, nextStatus, location || null, req.user.id, familyParticipants]
                 );
 
                 // 返回响应（在事务内部返回，在 runInTransaction 结束时会自动 COMMIT）
@@ -959,7 +967,8 @@ const adminController = {
                 student_ids,
                 type_ids,
                 status,
-                location
+                location,
+                family_participants
             } = req.body;
 
             // 将更新逻辑放入事务中，确保读取-验证-更新在同一连接上执行
@@ -1039,6 +1048,7 @@ const adminController = {
                 if (nextStudentId != null) { sets.push(`student_id = $${vi++}`); values.push(nextStudentId); }
                 if (nextTypeId != null) { sets.push(`course_id = $${vi++}`); values.push(nextTypeId); }
                 if (location !== undefined) { sets.push(`location = $${vi++}`); values.push(location || null); }
+                if (family_participants !== undefined) { sets.push(`family_participants = $${vi++}`); values.push((family_participants === null) ? 4 : Number(family_participants)); }
 
                 if (sets.length === 0) throw Object.assign(new Error('无更新字段'), { statusCode: 400 });
 
@@ -1500,7 +1510,7 @@ const adminController = {
         let startTime = Date.now();
 
         try {
-            const { type, format, startDate, endDate, ...filters } = req.query;
+            const { type, format, startDate, endDate, student_id, ...filters } = req.query;
             const adminId = req.user?.id;
             const adminName = req.user?.name || '未知用户';
 
@@ -1534,93 +1544,207 @@ const adminController = {
                 // 继续执行导出，不中断流程
             }
 
-            try {
-                // ===== 执行导出 =====
-                const result = await exportService.execute(type, format, startDate, endDate, filters);
+            // ===== 执行导出 =====
+            let exportData = [];
+            let filename = '';
 
-                // ===== 准备响应数据 =====
-                let responseData;
-                let contentType;
-                let filename;
+            // 根据导出类型获取数据
+            switch (type) {
+                case 'teacher_info':
+                    exportData = await exportService.exportTeacherInfo();
+                    filename = `教师信息数据_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+                    break;
 
-                if (format === 'excel') {
-                    responseData = result.data;
-                    contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-                    filename = result.filename;
-                } else {
-                    responseData = result.data;
-                    contentType = 'text/csv;charset=utf-8';
-                    filename = result.filename;
-                }
+                case 'student_info':
+                    exportData = await exportService.exportStudentInfo();
+                    filename = `学生信息数据_${new Date().toISOString().split('T')[0]}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+                    break;
 
-                // 记录导出成功
-                if (logId) {
-                    try {
-                        const duration = Date.now() - startTime;
-                        let fileSize = 0;
-                        if (format === 'excel') {
-                            // Excel文件大小估算（实际大小取决于XLSX库）
-                            fileSize = JSON.stringify(result.data).length * 2;
-                        } else {
-                            fileSize = result.data.length;
-                        }
-
-                        await logService.logExportComplete(
-                            logId,
-                            Array.isArray(result.data) ? result.data.length : 0,
-                            fileSize,
-                            filename
+                case 'teacher_schedule':
+                    if (!startDate || !endDate) {
+                        return res.status(400).json(
+                            standardResponse(false, null, '导出老师排课记录需要指定日期范围')
                         );
-                    } catch (logError) {
-                        console.warn('记录导出完成失败:', logError.message);
                     }
-                }
+                    const teacherId = req.query.teacher_id;
+                    exportData = await exportService.exportTeacherSchedule(startDate, endDate, { student_id, teacher_id: teacherId });
+                    filename = `教师授课记录_${startDate}_${endDate}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+                    break;
 
-                // ===== 返回导出数据 =====
-                return res.json(standardResponse(true, {
-                    data: responseData,
-                    filename: filename,
-                    format: format,
-                    contentType: contentType,
-                    exportedAt: new Date().toISOString(),
-                    recordCount: Array.isArray(result.data) ? result.data.length : 0
-                }, '导出成功'));
-
-            } catch (exportError) {
-                // 记录导出失败
-                if (logId) {
-                    try {
-                        await logService.logExportFailure(logId, exportError.message);
-                    } catch (logError) {
-                        console.warn('记录导出失败日志失败:', logError.message);
+                case 'student_schedule':
+                    if (!startDate || !endDate) {
+                        return res.status(400).json(
+                            standardResponse(false, null, '导出学生排课记录需要指定日期范围')
+                        );
                     }
-                }
+                    exportData = await exportService.exportStudentSchedule(startDate, endDate);
+                    filename = `学生授课记录_${startDate}_${endDate}.${format === 'excel' ? 'xlsx' : 'csv'}`;
+                    break;
 
-                // 处理验证错误
-                if (exportError.status === 413) {
-                    return res.status(413).json(
-                        standardResponse(false, null, '导出数据量过大，' + exportError.message)
+                default:
+                    return res.status(400).json(
+                        standardResponse(false, null, `不支持的导出类型: ${type}`)
                     );
-                }
-
-                throw exportError;
             }
 
+            // 记录导出成功
+            const duration = Date.now() - startTime;
+            try {
+                if (logId) {
+                    await logService.logExportComplete(logId, exportData.length, duration);
+                }
+            } catch (logError) {
+                console.warn('记录导出完成日志失败:', logError.message);
+            }
+
+            // 返回导出数据
+            res.json({
+                success: true,
+                data: exportData,
+                filename: filename,
+                format: format,
+                recordCount: exportData.length
+            });
+
         } catch (error) {
+            const statusCode = error.status || 500;
+            console.error('高级导出错误:', error);
+
             // 记录导出失败
             if (logId) {
                 try {
-                    await logService.logExportFailure(logId, error.message);
+                    const logService = new ExportLogService(db);
+                    await logService.logExportError(logId, error.message);
                 } catch (logError) {
-                    console.warn('记录导出失败日志失败:', logError.message);
+                    console.warn('记录导出错误日志失败:', logError.message);
                 }
             }
 
-            const statusCode = error.status || 400;
-            console.error('高级导出错误:', error);
             res.status(statusCode).json(
                 standardResponse(false, null, error.message || '导出操作失败，请稍后重试或联系管理员')
             );
+        }
+    },
+
+    /**
+     * 获取所有课程类型
+     */
+    async getScheduleTypes(req, res) {
+        try {
+            if (process.env.OFFLINE_DEV === 'true') {
+                return res.json(standardResponse(true, [
+                    { id: 1, name: 'primary', description: '基础课程' },
+                    { id: 2, name: 'advanced', description: '进阶课程' }
+                ], '获取课程类型成功(离线)'));
+            }
+
+            const result = await db.query('SELECT * FROM schedule_types ORDER BY id ASC');
+            res.json(standardResponse(true, result.rows || [], '获取课程类型成功'));
+        } catch (error) {
+            console.error('获取课程类型错误:', error);
+            res.status(500).json(standardResponse(false, null, '服务器错误'));
+        }
+    },
+
+    /**
+     * 创建课程类型
+     */
+    async createScheduleType(req, res) {
+        try {
+            const { name, description } = req.body;
+            if (!name) {
+                return res.status(400).json({ message: '课程类型名称不能为空' });
+            }
+
+            if (process.env.OFFLINE_DEV === 'true') {
+                return res.status(201).json(standardResponse(true, { id: Date.now(), name, description }, '创建成功(离线)'));
+            }
+
+            // 检查名称重复
+            const existing = await db.query('SELECT id FROM schedule_types WHERE name = $1', [name]);
+            if ((existing.rows || []).length > 0) {
+                return res.status(409).json({ message: '课程类型名称已存在' });
+            }
+
+            const result = await db.query(
+                'INSERT INTO schedule_types (name, description) VALUES ($1, $2) RETURNING *',
+                [name, description]
+            );
+
+            await recordAudit(req, { op: 'create_schedule_type', details: { name, description } });
+            res.status(201).json(standardResponse(true, result.rows[0], '创建课程类型成功'));
+        } catch (error) {
+            console.error('创建课程类型错误:', error);
+            res.status(500).json(standardResponse(false, null, '服务器错误'));
+        }
+    },
+
+    /**
+     * 更新课程类型
+     */
+    async updateScheduleType(req, res) {
+        try {
+            const { id } = req.params;
+            const { name, description } = req.body;
+            if (!name) {
+                return res.status(400).json({ message: '课程类型名称不能为空' });
+            }
+
+            if (process.env.OFFLINE_DEV === 'true') {
+                return res.json(standardResponse(true, { id: Number(id), name, description }, '更新成功(离线)'));
+            }
+
+            // 检查名称重复（排除自身）
+            const existing = await db.query('SELECT id FROM schedule_types WHERE name = $1 AND id <> $2', [name, id]);
+            if ((existing.rows || []).length > 0) {
+                return res.status(409).json({ message: '课程类型名称已存在' });
+            }
+
+            const result = await db.query(
+                'UPDATE schedule_types SET name = $1, description = $2 WHERE id = $3 RETURNING *',
+                [name, description, id]
+            );
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ message: '课程类型不存在' });
+            }
+
+            await recordAudit(req, { op: 'update_schedule_type', entityId: id, details: { name, description } });
+            res.json(standardResponse(true, result.rows[0], '更新课程类型成功'));
+        } catch (error) {
+            console.error('更新课程类型错误:', error);
+            res.status(500).json(standardResponse(false, null, '服务器错误'));
+        }
+    },
+
+    /**
+     * 删除课程类型
+     */
+    async deleteScheduleType(req, res) {
+        try {
+            const { id } = req.params;
+
+            if (process.env.OFFLINE_DEV === 'true') {
+                return res.json(standardResponse(true, null, '删除成功(离线)'));
+            }
+
+            // 检查是否有排课引用
+            const refCheck = await db.query('SELECT COUNT(*) as count FROM course_arrangement WHERE course_id = $1', [id]);
+            const count = Number(refCheck.rows[0].count);
+            if (count > 0) {
+                return res.status(409).json({ message: `该类型已被引用 ${count} 次，无法删除` });
+            }
+
+            const result = await db.query('DELETE FROM schedule_types WHERE id = $1 RETURNING id', [id]);
+            if (result.rows.length === 0) {
+                return res.status(404).json({ message: '课程类型不存在' });
+            }
+
+            await recordAudit(req, { op: 'delete_schedule_type', entityId: id });
+            res.json(standardResponse(true, null, '删除课程类型成功'));
+        } catch (error) {
+            console.error('删除课程类型错误:', error);
+            res.status(500).json(standardResponse(false, null, '服务器错误'));
         }
     }
 };

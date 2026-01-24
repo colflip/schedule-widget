@@ -15,7 +15,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
 
     <!-- Styles -->
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/core/global.css">
 
     <style>
         body {
@@ -61,16 +61,13 @@
 
         .form-icon {
             position: absolute;
-            left: 12px;
+            left: 16px;
+            /* Adjusted for new padding */
             top: 50%;
             transform: translateY(-50%);
             color: var(--color-gray-400);
             pointer-events: none;
             z-index: 10;
-        }
-
-        .form-input {
-            padding-left: 40px;
         }
 
         .login-footer {
@@ -136,11 +133,19 @@
         </div>
 
         <div class="login-footer">
-            &copy; 2025 Schedule Widget
+            &copy; <span id="copyrightYear">2025</span> Schedule Widget
         </div>
     </div>
     </div>
-    <script src="/js/main.js"></script>
+    <script src="/js/core/api-client.js"></script>
+    <script src="/js/core/main.js"></script>
+    <script>
+        // Update copyright year
+        const currentYear = new Date().getFullYear();
+        const startYear = 2025;
+        const yearText = currentYear > startYear ? `${startYear}-${currentYear}` : startYear;
+        document.getElementById('copyrightYear').textContent = yearText;
+    </script>
 </body>
 
 </html>

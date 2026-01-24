@@ -9,6 +9,7 @@ const router = express.Router();
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const { validate, scheduleValidation, userValidation } = require('../middleware/validation');
 const adminController = require('../controllers/adminController');
+const updateScheduleStatus = require('../jobs/updateScheduleStatus');
 
 // 用户管理路由
 router.get('/users/:userType', authMiddleware, adminOnly, adminController.getUsers);
@@ -41,5 +42,25 @@ router.get('/export/students', authMiddleware, adminOnly, adminController.export
 
 // 高级数据导出路由（支持多种导出类型和格式）
 router.get('/export-advanced', authMiddleware, adminOnly, adminController.advancedExport);
+
+// 课程类型管理路由
+router.get('/schedule-types', authMiddleware, adminController.getScheduleTypes);
+router.post('/schedule-types', authMiddleware, adminOnly, adminController.createScheduleType);
+router.put('/schedule-types/:id', authMiddleware, adminOnly, adminController.updateScheduleType);
+router.delete('/schedule-types/:id', authMiddleware, adminOnly, adminController.deleteScheduleType);
+
+// 手动触发排课状态更新任务
+router.post('/jobs/trigger-status-update', authMiddleware, adminOnly, async (req, res, next) => {
+    try {
+        console.log(`[AdminAPI] Manual trigger for status update by ${req.user?.username || 'unknown'}`);
+        const result = await updateScheduleStatus();
+        res.json({
+            message: 'Status update job executed',
+            data: result
+        });
+    } catch (err) {
+        next(err);
+    }
+});
 
 module.exports = router;

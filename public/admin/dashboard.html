@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理员仪表盘 - schedule-widget</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Round">
-    <link rel="stylesheet" href="/css/style.css">
-    <link rel="stylesheet" href="/css/dashboard.css">
+    <link rel="stylesheet" href="/css/core/global.css">
+    <link rel="stylesheet" href="/css/modules/dashboard.css">
     <style>
         /* 全局样式 */
         :root {
@@ -773,6 +773,10 @@
                     <span class="material-icons-round">people</span>
                     <span class="nav-text">用户管理</span>
                 </a>
+                <a href="#" class="nav-item" data-section="schedule-types">
+                    <span class="material-icons-round">category</span>
+                    <span class="nav-text">课程类型管理</span>
+                </a>
                 <a href="#" class="nav-item" data-section="availability">
                     <span class="material-icons-round">event_available</span>
                     <span class="nav-text">教师空闲时段</span>
@@ -965,6 +969,55 @@
                     </div>
                 </section>
 
+                <!-- 课程类型管理部分 -->
+                <section id="schedule-types" class="dashboard-section">
+                    <div class="header-toolbar">
+                        <div class="section-title" style="font-size: 1.25rem; font-weight: 600; color: #1e293b;">课程类型列表
+                        </div>
+                        <button id="addScheduleTypeBtn" class="add-btn">
+                            <span class="material-icons-round" style="font-size: 18px; margin-right: 4px;">add</span>
+                            添加类型
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table id="scheduleTypesTable">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>类型名称</th>
+                                    <th>描述</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scheduleTypesTableBody">
+                                <!-- 通过 JS 动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- 课程类型表单模态，复用现有的样式结构 -->
+                    <div id="scheduleTypeFormContainer" class="form-container" style="display: none;">
+                        <div class="form-header">
+                            <h3 id="scheduleTypeFormTitle">添加课程类型</h3>
+                            <button class="close-btn" onclick="closeScheduleTypeFormModal()"></button>
+                        </div>
+                        <form id="scheduleTypeForm" data-mode="add" data-id="">
+                            <div class="form-group">
+                                <label for="scheduleTypeName">类型名称</label>
+                                <input type="text" id="scheduleTypeName" required placeholder="例如：入户、试教">
+                            </div>
+                            <div class="form-group">
+                                <label for="scheduleTypeDescription">描述</label>
+                                <textarea id="scheduleTypeDescription" rows="3" placeholder="可选：对该类型的简单描述"></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" onclick="closeScheduleTypeFormModal()">取消</button>
+                                <button type="submit" id="scheduleTypeFormSubmit">保存</button>
+                            </div>
+                        </form>
+                    </div>
+                </section>
+
                 <!-- 排课管理部分 -->
                 <section id="schedule" class="dashboard-section">
                     <!-- 周视图标题：合并为一行显示筛选、周导航与新建按钮 -->
@@ -1000,13 +1053,7 @@
                                 <label for="typeFilter">类型筛选:</label>
                                 <select id="typeFilter">
                                     <option value="">全部类型</option>
-                                    <option value="visit">入户</option>
-                                    <option value="trial">试教</option>
-                                    <option value="review">评审</option>
-                                    <option value="review_record">评审记录</option>
-                                    <option value="half_visit">半次入户</option>
-                                    <option value="group_activity">集体活动</option>
-                                    <option value="advisory">咨询</option>
+                                    <!-- Dynamic Options from store -->
                                 </select>
 
                             </div>
@@ -1122,8 +1169,12 @@
                             </div>
                             <div class="form-group">
                                 <label for="scheduleTypeSelect">类型</label>
-                                <select id="scheduleTypeSelect" required></select>
+                                <select id="scheduleTypeSelect" required>
+                                    <option value="">选择类型</option>
+                                    <!-- Dynamic Options from store -->
+                                </select>
                             </div>
+
                             <div class="form-group">
                                 <label for="scheduleLocation">入户地点</label>
                                 <textarea id="scheduleLocation" placeholder="默认使用学生探访地点" rows="1"></textarea>
@@ -1224,13 +1275,22 @@
 
                                             <div class="preset-buttons"
                                                 style="display:flex; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
-                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
-                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
-                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="yesterday">昨天</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-week">上周</button>
                                                 <button type="button" class="preset-btn"
                                                     data-preset="last-month">上月</button>
                                                 <button type="button" class="preset-btn"
+                                                    data-preset="last-quarter">上季度</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-year">上年</button>
+                                                <button type="button" class="preset-btn" data-preset="today">今天</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
                                                     data-preset="quarter">本季度</button>
+                                                <button type="button" class="preset-btn" data-preset="year">本年</button>
                                             </div>
                                         </div>
                                     </div>
@@ -1276,13 +1336,22 @@
                                             </button>
                                             <div class="preset-buttons" data-target="teacher"
                                                 style="display:flex; gap:4px;">
-                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
-                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
-                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="yesterday">昨天</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-week">上周</button>
                                                 <button type="button" class="preset-btn"
                                                     data-preset="last-month">上月</button>
                                                 <button type="button" class="preset-btn"
+                                                    data-preset="last-quarter">上季度</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-year">上年</button>
+                                                <button type="button" class="preset-btn" data-preset="today">今天</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
                                                     data-preset="quarter">本季度</button>
+                                                <button type="button" class="preset-btn" data-preset="year">本年</button>
                                             </div>
                                             <div class="filter-group"
                                                 style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
@@ -1340,13 +1409,22 @@
                                             </button>
                                             <div class="preset-buttons" data-target="student"
                                                 style="display:flex; gap:4px;">
-                                                <button type="button" class="preset-btn" data-preset="today">今日</button>
-                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
-                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="yesterday">昨天</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-week">上周</button>
                                                 <button type="button" class="preset-btn"
                                                     data-preset="last-month">上月</button>
                                                 <button type="button" class="preset-btn"
+                                                    data-preset="last-quarter">上季度</button>
+                                                <button type="button" class="preset-btn"
+                                                    data-preset="last-year">上年</button>
+                                                <button type="button" class="preset-btn" data-preset="today">今天</button>
+                                                <button type="button" class="preset-btn" data-preset="week">本周</button>
+                                                <button type="button" class="preset-btn" data-preset="month">本月</button>
+                                                <button type="button" class="preset-btn"
                                                     data-preset="quarter">本季度</button>
+                                                <button type="button" class="preset-btn" data-preset="year">本年</button>
                                             </div>
                                             <div class="filter-group"
                                                 style="display:flex; align-items:center; gap:8px; border-left: 1px solid #e5e7eb; padding-left: 12px;">
@@ -1389,15 +1467,17 @@
     <!-- Sidebar Overlay -->
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
-    <script src="/js/api-utils.js"></script>
+    <script src="/js/core/api-client.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="/js/admin-stats-plugins.js"></script>
-    <script src="/js/date-range-utils.js"></script>
-    <script src="/js/schedule-types-store.js"></script>
-    <script src="/js/i18n-utils.js"></script>
-    <script src="/js/export-ui-manager.js"></script>
-    <script src="/js/export-dialog.js"></script>
-    <script src="/js/admin.js"></script>
+    <script src="/js/modules/admin/stats-plugins.js"></script>
+    <script src="/js/utils/date-range-utils.js"></script>
+    <script src="/js/core/schedule-types-store.js"></script>
+    <script src="/js/utils/i18n-utils.js"></script>
+    <script src="/js/utils/export-ui-manager.js"></script>
+    <script src="/js/components/export-dialog.js?v=20240121"></script>
+    <script type="module" src="/js/modules/admin/index.js"></script>
+    <script src="/js/modules/admin/today-logic.js"></script>
+    <script src="/js/modules/admin/legacy-adapter.js"></script>
 </body>
 
 </html>

@@ -1,205 +1,109 @@
-# Schedule Widget - 师生排课系统
-
-一个现代化的全栈排课管理系统，支持教师、学生和管理员三种角色的课程安排、可用时间管理和数据统计分析。
-
-## ✨ 主要功能
-
-### 👨‍🏫 教师端
-- 📅 **课程安排管理** - 查看和管理个人课程安排
-- ⏰ **可用时间设置** - 灵活设置每周可用时间段
-- 📊 **教学统计** - 可视化展示教学数据和趋势
-- 👤 **个人资料** - 管理个人信息和密码
-
-### 👨‍🎓 学生端
-- 📚 **课程查看** - 查看个人课程安排
-- ⏱️ **时间管理** - 设置个人可用时间
-- 📈 **学习统计** - 查看学习数据汇总
-- 🔐 **账户管理** - 个人信息和密码更新
-
-### 👑 管理员端
-- 👥 **用户管理** - 管理教师和学生账户
-- 📋 **课程排期** - 创建和调整课程安排
-- 🎯 **一对一排课** - 智能匹配教师和学生时间
-- 📊 **系统统计** - 全局数据分析和报表导出
-
-## 🚀 技术栈
-
-### 后端
-- **Node.js** + **Express.js** - 服务器框架
-- **PostgreSQL** - 关系型数据库
-- **JWT** - 身份验证
-- **bcrypt** - 密码加密
-
-### 前端
-- **原生 JavaScript (ES6+)** - 无框架依赖
-- **Chart.js** - 数据可视化
-- **CSS3** - 现代化样式设计
-
-### 开发工具
-- **nodemon** - 开发热重载
-- **Jest** - 单元测试
-- **BackstopJS** - 视觉回归测试
-- **Puppeteer** - 浏览器自动化
-
-## 📦 快速开始
-
-### 环境要求
-- Node.js >= 18
-- PostgreSQL >= 12
-- npm >= 8
-
-### 安装步骤
-
-1. **克隆项目**
-```bash
-git clone <repository-url>
-cd schedule-widget-02
-```
-
-2. **安装依赖**
-```bash
-npm install
-```
-
-3. **配置环境变量**
-```bash
-cp .env.example .env
-# 编辑 .env 文件，填写数据库连接等配置
-```
-
-4. **初始化数据库**
-```bash
-# 运行初始化脚本创建数据库结构
-./scripts/run-migration.sh
-```
-
-5. **启动开发服务器**
-```bash
-npm run dev
-```
-
-服务器将在 `http://localhost:3001` 启动
-
-### 默认账户
-
-系统初始化后，可使用以下测试账户登录：
-
-**管理员**
-- 用户名: `admin`
-- 密码: 请查看初始化脚本或联系系统管理员
-
-**教师/学生**
-- 通过管理员后台创建账户
-
-## 📁 项目结构
-
-```
-schedule-widget-02/
-├── public/                 # 前端静态资源
-│   ├── admin/             # 管理员页面
-│   ├── teacher/           # 教师端页面
-│   ├── student/           # 学生端页面
-│   ├── css/               # 样式文件
-│   └── js/                # JavaScript文件
-│       ├── admin.js       # 管理员逻辑
-│       ├── teacher/       # 教师端模块
-│       ├── student/       # 学生端模块
-│       └── *.js           # 公共工具函数
-├── src/
-│   └── server/            # 后端代码
-│       ├── app.js         # 应用入口
-│       ├── controllers/   # 控制器
-│       ├── routes/        # 路由
-│       ├── db/            # 数据库相关
-│       └── scripts/       # 工具脚本
-├── scripts/               # 构建和维护脚本
-├── docs/                  # 项目文档
-│   ├── DEPLOYMENT.md      # 部署指南
-│   ├── DATABASE.md        # 数据库文档
-│   └── STYLE_GUIDE.md     # 样式指南
-├── package.json
-├── .env.example           # 环境变量模板
-└── README.md              # 本文件
-```
-
-## 🔧 可用脚本
-
-```bash
-# 开发
-npm run dev              # 启动开发服务器（热重载）
-npm run dev:offline      # 离线开发模式（无数据库）
-
-# 生产
-npm start                # 启动生产服务器
-
-# 数据库
-npm run db:migrate:restructure           # 运行数据库结构迁移
-npm run db:optimize-indexes              # 优化数据库索引
-npm run db:weekly-analyze                # 周分析维护
-
-# 测试
-npm test                 # 运行所有测试
-npm run test:unit        # 单元测试
-npm run test:visual:chromium  # 视觉测试（Chromium）
-
-# 文档
-npm run docs:db          # 生成数据库文档
-
-# 定时任务
-npm run jobs:auto-complete-schedules     # 自动完成课程状态
-```
-
-## 🌐 部署
-
-### Netlify部署（推荐）
-
-项目已配置 `netlify.toml`，支持一键部署：
-
-1. 连接GitHub仓库到Netlify
-2. 设置环境变量（`DATABASE_URL`, `JWT_SECRET`等）
-3. 自动部署
-
-详见 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md)
-
-### Docker部署
-
-```bash
-# 构建镜像
-docker build -t schedule-widget .
-
-# 运行容器
-docker run -d -p 3000:3000 \
-  -e DATABASE_URL=your_database_url \
-  -e JWT_SECRET=your_jwt_secret \
-  schedule-widget
-```
-
-## 📚 文档
-
-- [部署指南](./docs/DEPLOYMENT.md) - 详细的部署步骤和配置
-- [数据库文档](./docs/DATABASE.md) - 数据库架构和关系说明
-- [样式指南](./docs/STYLE_GUIDE.md) - UI/UX设计规范
-
-## 🔐 环境变量说明
-
-| 变量名 | 说明 | 必需 | 默认值 |
-|--------|------|------|--------|
-| `DATABASE_URL` | PostgreSQL连接字符串 | 是 | - |
-| `JWT_SECRET` | JWT密钥 | 是 | - |
-| `PORT` | 服务器端口 | 否 | 3000 |
-| `NODE_ENV` | 环境模式 | 否 | development |
-| `OFFLINE_DEV` | 离线开发模式 | 否 | false |
-
-完整配置请参考 [`.env.example`](./.env.example)
-
-## 🤝 贡献
-
-欢迎提交Issue和Pull Request！
-
-## 📄 许可证
-
-本项目采用 MIT 许可证
+<div align="center">
+  <h2>Schedule Widget</h2>
+  <p>
+    智能化 • 可视化 • 全栈式
+    <br />
+    <br />
+    <a href="https://github.com/colflip/schedule-widget/issues">报告 Bug</a>
+    ·
+    <a href="https://github.com/colflip/schedule-widget/issues">提出新功能</a>
+  </p>
+  
+  <p>
+    <img src="https://img.shields.io/badge/version-1.0.0-blue.svg?style=flat-square" alt="Version">
+    <img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License">
+    <img src="https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen.svg?style=flat-square" alt="Node">
+    <img src="https://img.shields.io/badge/express-4.18.2-000000.svg?style=flat-square" alt="Express">
+    <img src="https://img.shields.io/badge/postgresql-latest-336791.svg?style=flat-square" alt="PostgreSQL">
+  </p>
+</div>
 
 ---
 
-**开发团队** | ß排课系统
+## 核心功能
+
+### 教师端
+- **仪表盘**: 实时查看日程与统计。
+- **时间管理**: 拖拽设置可用时间，自动同步。
+- **数据分析**: 教学工时可视化。
+- **账户安全**: 完善的资料与安全管理。
+
+### 学生端
+- **日程查看**: 多视图（日/周/月）课表。
+- **时间规划**: 自主设定学习空闲时段。
+- **学习统计**: 学习时长与轨迹追踪。
+
+### 管理端
+- **排课引擎**: 实时冲突检测，支持批量排课/锁定。
+- **人员管理**: 账户生命周期与权限控制。
+- **数据看板**: 系统级报表与 Excel 导出。
+- **系统配置**: 学期、课程类型等参数设置。
+
+## 技术架构
+
+采用**前后端分离**逻辑架构，兼顾开发效率与性能。
+
+| 模块 | 技术选型 | 说明 |
+| :--- | :--- | :--- |
+| **Backend** | **Node.js + Express** | 轻量级 RESTful API 服务 |
+| **Database** | **PostgreSQL** | 云原生关系型数据库 |
+| **Auth** | **JWT + Bcrypt** | 无状态认证与安全加密 |
+| **Frontend** | **Native JS (ES6+)** | 无框架依赖，高性能 |
+| **UI** | **CSS3 + Glassmorphism** | 现代化拟态设计 |
+| **Validation** | **Joi** | 严谨的数据校验 |
+
+## 目录结构
+
+```text
+schedule-widget/
+├── public/                  # 前端静态资源
+│   ├── css/                 # 样式文件
+│   ├── js/                  # 业务逻辑
+│   │   ├── components/      # UI组件 (Modal, Toast)
+│   │   ├── core/            # 核心库 (Auth, ApiClient)
+│   │   └── modules/         # 业务模块
+│   └── index.html           # 应用入口
+├── src/
+│   └── server/              # 后端核心
+│       ├── controllers/     # 控制层
+│       ├── services/        # 业务层
+│       ├── middleware/      # 中间件
+│       ├── routes/          # API路由
+│       ├── db/              # 数据库层
+│       └── app.js           # 服务入口
+├── docs/                    # 项目文档
+└── package.json             # 依赖配置
+```
+
+## 快速开始
+
+### 1. 环境准备
+*   Node.js v16+
+*   npm v8+
+
+### 2. 安装配置
+```bash
+git clone https://github.com/colflip/schedule-widget.git
+cd schedule-widget
+npm install
+cp .env.example .env
+# 编辑 .env 填入数据库信息
+```
+
+### 3. 初始化
+```bash
+npm run db:migrate:restructure
+```
+
+### 4. 启动
+```bash
+# 开发模式
+npm run dev
+# 生产模式
+npm start
+```
+访问: `http://localhost:3001`
+
+## 版权说明
+
+基于 [MIT License](./LICENSE) 开源。
