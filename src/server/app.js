@@ -1,48 +1,35 @@
-/**
- * 应用入口文件
- * @description 初始化 Express 应用，配置中间件、路由和全局错误处理
- */
-
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const bodyParser = require('body-parser');
 const path = require('path');
-const { errorHandler, notFoundHandler } = require('./middleware');
-const initScheduler = require('./jobs/scheduler');
+const { errorHandler } = require('./middleware/validation');
+require('dotenv').config();
 
-// 初始化应用
 const app = express();
 
-// ==========================================
-// 1. 全局中间件配置
-// ==========================================
-
-// 允许跨域请求
+// 中间件
 app.use(cors());
-
-// 解析 JSON 请求体
-app.use(express.json());
-
-// 解析 URL 编码请求体
-app.use(express.urlencoded({ extended: true }));
-
-// 静态文件服务
+app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '../../public')));
 
-// ==========================================
-// 2. 路由配置
-// ==========================================
+// 路由
+const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
+const teacherRoutes = require('./routes/teacher');
+const studentRoutes = require('./routes/student');
+const scheduleRoutes = require('./routes/schedule');
+const userRoutes = require('./routes/users');
+const healthRoutes = require('./routes/health');
 
-// API 路由
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/teacher', require('./routes/teacher'));
-app.use('/api/student', require('./routes/student'));
-app.use('/api/schedule', require('./routes/schedule'));
-app.use('/api/users', require('./routes/users'));
-app.use('/api/health', require('./routes/health'));
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/student', studentRoutes);
+app.use('/api/schedule', scheduleRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/health', healthRoutes);
 
-// 页面路由 (支持 HTML5 History Mode 或直接访问)
+// 添加仪表盘页面路由
 // 管理员仪表盘
 app.get(['/admin/dashboard', '/admin/dashboard.html', '/admin/'], (req, res) => {
     res.sendFile(path.join(__dirname, '../../public/admin/dashboard.html'));
@@ -58,39 +45,11 @@ app.get(['/student/dashboard', '/student/dashboard.html', '/student/'], (req, re
     res.sendFile(path.join(__dirname, '../../public/student/dashboard.html'));
 });
 
-// ==========================================
-// 3. 错误处理
-// ==========================================
-
-// 404 处理 (所有未匹配路由)
-app.use(notFoundHandler);
-
-// 全局错误处理
+// 错误处理中间件
 app.use(errorHandler);
 
-// ==========================================
-// 4. 服务器启动
-// ==========================================
-
+// 启动服务器
 const PORT = process.env.PORT || 3001;
-
-// 仅在非测试环境下启动监听
-if (process.env.NODE_ENV !== 'test') {
-    app.listen(PORT, () => {
-        console.log(`=================================`);
-        console.log(`🚀 服务器已启动`);
-        console.log(`📂 环境: ${process.env.NODE_ENV || 'development'}`);
-        console.log(`🔌 端口: ${PORT}`);
-        console.log(`=================================`);
-
-        // 初始化定时任务
-        try {
-            initScheduler();
-            console.log('⏰ 定时任务调度器已运行');
-        } catch (err) {
-            console.error('❌ 定时任务启动失败:', err);
-        }
-    });
-}
-
-module.exports = app;
+app.listen(PORT, () => {
+  console.log(`服务器运行在端口 ${PORT}`);
+});
