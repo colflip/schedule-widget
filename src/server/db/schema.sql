@@ -71,6 +71,8 @@ CREATE TABLE course_arrangement (
     created_by INTEGER, -- 创建人管理员 ID
     last_auto_update TIMESTAMP, -- 最后一次自动更新状态的时间
     family_participants INTEGER DEFAULT 13, -- 家庭参加人员: 00=无人, 10=学生, 11=学生+妈, 12=学生+爸, 13=学生+爸妈, 14=学生+多人；01=妈，02=爸，03=爸妈，04=多人
+    transport_fee DECIMAL(10,2) DEFAULT 0, -- 交通费
+    other_fee DECIMAL(10,2) DEFAULT 0, -- 其他费用
     CONSTRAINT course_arrangement_pkey PRIMARY KEY (id),
     CONSTRAINT course_arrangement_time_order_chk CHECK ((end_time > start_time)),
     CONSTRAINT course_arrangement_student_rating_range CHECK (((student_rating >= 1) AND (student_rating <= 5))),
@@ -99,6 +101,20 @@ CREATE TABLE export_logs (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     completed_at TIMESTAMP, -- 完成时间
     CONSTRAINT export_logs_pkey PRIMARY KEY (id)
+);
+
+-- Table: fee_audit_logs (排课费用修改审计日志表)
+CREATE TABLE fee_audit_logs (
+    id INTEGER, -- 主键 ID
+    schedule_id INTEGER NOT NULL, -- 关联排课 ID
+    operator_id INTEGER NOT NULL, -- 操作人 ID
+    operator_role VARCHAR(20) NOT NULL, -- 操作人角色 (admin, teacher)
+    old_transport_fee DECIMAL(10,2) DEFAULT 0, -- 修改前交通费
+    new_transport_fee DECIMAL(10,2) DEFAULT 0, -- 修改后交通费
+    old_other_fee DECIMAL(10,2) DEFAULT 0, -- 修改前其他费用
+    new_other_fee DECIMAL(10,2) DEFAULT 0, -- 修改后其他费用
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    CONSTRAINT fee_audit_logs_pkey PRIMARY KEY (id)
 );
 
 -- Table: schedule_auto_update_logs (排课自动更新日志表)
@@ -198,6 +214,7 @@ CREATE TABLE teachers (
     last_login TIMESTAMP, -- 最后登录时间
     status INTEGER NOT NULL DEFAULT 1, -- 状态: 1=正常, 0=禁用, -1=删除
     restriction INTEGER DEFAULT 1, -- 限制等级 (0-5)，0=无限制，1=按时间安排显示，2及以上暂未定义
+    student_ids VARCHAR(500), -- 关联学生ID列表 (逗号分隔)
     CONSTRAINT teachers_username_key UNIQUE (username),
     CONSTRAINT teachers_pkey PRIMARY KEY (id),
     CONSTRAINT teachers_status_check CHECK ((status = ANY (ARRAY['-1'::integer, 0, 1]))),
@@ -245,6 +262,9 @@ CREATE INDEX idx_teacher_availability_date ON public.teacher_daily_availability 
 CREATE INDEX idx_teacher_daily_availability_date ON public.teacher_daily_availability USING btree (teacher_id, date);
 CREATE INDEX idx_teacher_daily_availability_date_status ON public.teacher_daily_availability USING btree (date, status);
 CREATE INDEX idx_teacher_daily_availability_slots ON public.teacher_daily_availability USING btree (date, morning_available, afternoon_available, evening_available);
+ALTER TABLE fee_audit_logs ADD CONSTRAINT fee_audit_logs_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES course_arrangement(id) ON DELETE CASCADE;
+CREATE INDEX idx_fee_audit_logs_schedule ON public.fee_audit_logs USING btree (schedule_id);
+CREATE INDEX idx_fee_audit_logs_operator ON public.fee_audit_logs USING btree (operator_id, operator_role);
 CREATE INDEX idx_teacher_daily_availability_teacher_date ON public.teacher_daily_availability USING btree (teacher_id, date);
 CREATE INDEX idx_teachers_created_at ON public.teachers USING btree (created_at);
 CREATE INDEX idx_teachers_last_login ON public.teachers USING btree (last_login);
