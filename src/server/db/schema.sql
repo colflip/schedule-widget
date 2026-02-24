@@ -222,15 +222,15 @@ CREATE TABLE teachers (
 );
 
 -- Foreign Keys： 外键
-ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE RESTRICT;
-ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT;
+ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_course_id_fkey FOREIGN KEY (course_id) REFERENCES schedule_types(id) ON DELETE RESTRICT;
-ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_created_by_fkey FOREIGN KEY (created_by) REFERENCES administrators(id);
+ALTER TABLE course_arrangement ADD CONSTRAINT course_arrangement_created_by_fkey FOREIGN KEY (created_by) REFERENCES administrators(id) ON UPDATE CASCADE;
 ALTER TABLE schedule_auto_update_logs ADD CONSTRAINT schedule_auto_update_logs_schedule_id_fkey FOREIGN KEY (schedule_id) REFERENCES course_arrangement(id) ON DELETE CASCADE;
-ALTER TABLE student_daily_availability ADD CONSTRAINT student_daily_availability_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE;
-ALTER TABLE student_daily_availability ADD CONSTRAINT fk_student_daily_availability_student_id FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE;
-ALTER TABLE teacher_daily_availability ADD CONSTRAINT teacher_daily_availability_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE;
-ALTER TABLE teacher_daily_availability ADD CONSTRAINT fk_teacher_daily_availability_teacher_id FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE;
+ALTER TABLE student_daily_availability ADD CONSTRAINT student_daily_availability_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE student_daily_availability ADD CONSTRAINT fk_student_daily_availability_student_id FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE teacher_daily_availability ADD CONSTRAINT teacher_daily_availability_teacher_id_fkey FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE teacher_daily_availability ADD CONSTRAINT fk_teacher_daily_availability_teacher_id FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- Indexes： 索引
 CREATE INDEX idx_administrators_created_at ON public.administrators USING btree (created_at);
