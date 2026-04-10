@@ -63,7 +63,7 @@ CREATE TABLE course_arrangement (
     location TEXT, -- 上课地点
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 更新时间
-    status VARCHAR(20) DEFAULT 'pending'::character varying, -- 状态: pending(待确认), confirmed(已确认), cancelled(已取消), completed(已完成)
+    status VARCHAR(20) DEFAULT 'pending'::character varying, -- 状态: pending(待确认), confirmed(已确认), cancelled(已取消), completed(已完成)，modified_away(已调整)
     student_rating SMALLINT, -- 学生评分 (1-5)
     teacher_rating SMALLINT, -- 教师评分 (1-5)
     student_comment TEXT, -- 学生评价内容
@@ -73,6 +73,7 @@ CREATE TABLE course_arrangement (
     family_participants INTEGER DEFAULT 13, -- 家庭参加人员: 00=无人, 10=学生, 11=学生+妈, 12=学生+爸, 13=学生+爸妈, 14=学生+多人；01=妈，02=爸，03=爸妈，04=多人
     transport_fee DECIMAL(10,2) DEFAULT 0, -- 交通费
     other_fee DECIMAL(10,2) DEFAULT 0, -- 其他费用
+    adjustment_type INTEGER DEFAULT 0, -- 调整类型: 0=计划安排, 1=临时加课, 2=调整课程
     CONSTRAINT course_arrangement_pkey PRIMARY KEY (id),
     CONSTRAINT course_arrangement_time_order_chk CHECK ((end_time > start_time)),
     CONSTRAINT course_arrangement_student_rating_range CHECK (((student_rating >= 1) AND (student_rating <= 5))),
