@@ -139,6 +139,18 @@ CREATE TABLE schedule_types (
     CONSTRAINT schedule_types_pkey PRIMARY KEY (id)
 );
 
+-- Table: holidays (节假日/调休补班配置表)
+CREATE TABLE holidays (
+    id SERIAL PRIMARY KEY, -- 主键 ID
+    year INTEGER NOT NULL, -- 年份
+    type VARCHAR(20) NOT NULL, -- 类型: holiday(法定节假日) / makeup(调休补班)
+    label VARCHAR(100) NOT NULL, -- 名称
+    start_date DATE NOT NULL, -- 开始日期
+    end_date DATE NOT NULL, -- 结束日期
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP -- 更新时间
+);
+
 -- Table: student_daily_availability (学生每日可用性表)
 CREATE TABLE student_daily_availability (
     id INTEGER, -- 主键 ID

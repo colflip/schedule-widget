@@ -1,12 +1,12 @@
 <div align="center">
-  <h2>Schedule Widget</h2>
+  <h2>Classflow</h2>
   <p>
     智能化 • 可视化 • 全栈式
     <br />
     <br />
-    <a href="https://github.com/colflip/schedule-widget/issues">报告 Bug</a>
+    <a href="https://github.com/colflip/classflow/issues">报告 Bug</a>
     ·
-    <a href="https://github.com/colflip/schedule-widget/issues">提出新功能</a>
+    <a href="https://github.com/colflip/classflow/issues">提出新功能</a>
   </p>
   
   <p>
@@ -55,7 +55,7 @@
 ## 目录结构
 
 ```text
-schedule-widget/
+classflow/
 ├── public/                  # 前端静态资源
 │   ├── css/                 # 样式文件
 │   ├── js/                  # 业务逻辑
@@ -83,8 +83,8 @@ schedule-widget/
 
 ### 2. 安装配置
 ```bash
-git clone https://github.com/colflip/schedule-widget.git
-cd schedule-widget
+git clone https://github.com/colflip/classflow.git
+cd classflow
 npm install
 cp .env.example .env
 # 编辑 .env 填入数据库信息

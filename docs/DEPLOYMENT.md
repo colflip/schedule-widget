@@ -31,18 +31,18 @@
 ### 构建镜像
 
 ```bash
-docker build -t schedule-widget .
+docker build -t classflow .
 ```
 
 ### 运行容器
 
 ```bash
 docker run -d \
-  --name schedule-widget \
+  --name classflow \
   -p 3000:3000 \
   -e DATABASE_URL=your_database_url \
   -e JWT_SECRET=your_jwt_secret \
-  schedule-widget
+  classflow
 ```
 
 ## 传统 Node.js 部署
